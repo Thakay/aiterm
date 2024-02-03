@@ -71,13 +71,13 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed marshaling payload: %w", err)
+		return "", &MarshalingError{err} //fmt.Errorf("failed marshaling payload: %w", err)
 	}
 
 	// Make the HTTP POST request
 	req, err := http.NewRequest("POST", url, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return "", fmt.Errorf("failed creating request: %w", err)
+		return "", &RequestCreationError{err} //fmt.Errorf("failed creating request: %w", err)
 	}
 
 	// Set the necessary headers
@@ -87,7 +87,7 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 	// Execute the request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed executing request: %w", err)
+		return "", &ExecutionError{err} //fmt.Errorf("failed executing request: %w", err)
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
@@ -99,7 +99,7 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 	// Read and print the response body
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed reading response body: %w", err)
+		return "", &ResponseReadError{err} //fmt.Errorf("failed reading response body: %w", err)
 	}
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode <= http.StatusMultipleChoices {
@@ -107,10 +107,10 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 		var response SuccessResponse
 		err = json.Unmarshal(responseBody, &response)
 		if err != nil {
-			return "", fmt.Errorf("failed unmarshelling the success response: %w", err)
+			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the success response: %w", err)
 		}
 		if len(response.Choices) > 0 {
-			return fmt.Sprintf("Response: %s", response.Choices[0].Message.Content), nil
+			return fmt.Sprintf("%s", response.Choices[0].Message.Content), nil
 		}
 		return "", fmt.Errorf("success response does not contain choices")
 	} else {
@@ -118,9 +118,13 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 		var errorResponse ErrorResponse
 		err = json.Unmarshal(responseBody, &errorResponse)
 		if err != nil {
-			return "", fmt.Errorf("failed unmarshelling the error response: %w", err)
+			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the error response: %w", err)
 		}
-		return "", fmt.Errorf("API error: %s - %s", errorResponse.Error.Type, errorResponse.Error.Message)
+		return "", &APIError{
+			Type:    errorResponse.Error.Type,
+			Message: errorResponse.Error.Message,
+			Code:    errorResponse.Error.Code,
+		}
 	}
 
 }
