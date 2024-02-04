@@ -51,3 +51,11 @@ type APIError struct {
 func (e *APIError) Error() string {
 	return fmt.Sprintf("API error: %s - %s - %s", e.Type, e.Message, e.Code)
 }
+
+type InputReadError struct {
+	OriginalError error
+}
+
+func (e *InputReadError) Error() string {
+	return fmt.Sprintf("failed reading Input from terminal: %v", e.OriginalError)
+}
