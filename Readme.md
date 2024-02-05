@@ -15,7 +15,7 @@ and user-friendly.
 ## Features
 
 - **Natural Language Processing**: Translate natural language commands into Unix commands using advanced AI APIs.
-- **Flexible Configuration**: Use an environment variable or a flag to set the OpenAI API key.
+- **Flexible Configuration**: Use an environment variable or a flag to set the OpenAI API key. (Upcoming) select which OpenAI model to use with different configs.
 - **Interactive Options**: After translating a command, choose to run it directly, copy it to the clipboard, or edit it further for customization.
 - **Contextual Awareness**: (Upcoming) Send subsequent requests without context or with the current context for refined command suggestions.
 
