@@ -15,14 +15,13 @@ import (
 
 const (
 	varKeyName = "OPENAI_KEY"
-	endPoint   = "https://api.openai.com/v1/chat/completions"
 )
 
 func main() {
 
 	apiKey := os.Getenv(varKeyName)
 	flagKey := flag.String("key", apiKey, "API key from OpenAI")
-	flagURL := flag.String("url", endPoint, "custom API endpoints to interact with")
+	flagURL := flag.String("url", defaultEndPoint, "custom API endpoints to interact with")
 
 	flag.Parse()
 	apiKey = *flagKey
@@ -38,13 +37,24 @@ func main() {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
+	openAIClient := NewOpenAIProvider(&OpenAIOptions{
+		ProviderOptions: &ProviderOptions{
+			URL: apiURL,
+		},
+		model:            "gpt-3.5-turbo",
+		temperature:      1.0,
+		maxTokens:        256,
+		topP:             1.0,
+		frequencyPenalty: 0.0,
+		presencePenalty:  0.0,
+	})
 	apiKey, err := handleApiKey(apiKey, reader)
 	if err != nil {
 		log.Println(err)
 	}
 
 	for {
-		cmdstr, err := api(apiKey, apiURL, userRequest)
+		cmdstr, err := openAIClient.fetch(apiKey, userRequest)
 		if err != nil {
 			if retry, newApiKey := handleAPIError(err, reader); retry {
 				apiKey = newApiKey

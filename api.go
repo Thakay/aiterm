@@ -9,6 +9,10 @@ import (
 	"net/http"
 )
 
+const (
+	defaultEndPoint = "https://api.openai.com/v1/chat/completions"
+)
+
 type ErrorResponse struct {
 	Error struct {
 		Message string      `json:"message"`
@@ -47,8 +51,46 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-func api(apiKey string, url string, userRequest string) (string, error) {
+type openAIProvider struct {
+	options OpenAIOptions
+}
 
+type OpenAIOptions struct {
+	*ProviderOptions
+	model            string
+	temp             string
+	messages         []map[string]string
+	temperature      float64
+	maxTokens        int
+	topP             float64
+	frequencyPenalty float64
+	presencePenalty  float64
+}
+
+func NewOpenAIProvider(options *OpenAIOptions) APIProvider {
+	if options == nil {
+		options = &OpenAIOptions{
+			ProviderOptions: &ProviderOptions{
+				URL: defaultEndPoint,
+			},
+			model:            "gpt-3.5-turbo",
+			temperature:      1.0,
+			maxTokens:        256,
+			topP:             1.0,
+			frequencyPenalty: 0.0,
+			presencePenalty:  0.0,
+		}
+	}
+	if options.ProviderOptions == nil {
+		options.ProviderOptions = &ProviderOptions{URL: defaultEndPoint}
+	} else if options.ProviderOptions.URL == "" {
+		options.ProviderOptions.URL = defaultEndPoint
+	}
+
+	return &openAIProvider{*options}
+}
+
+func (o *openAIProvider) fetch(apiKey string, userRequest string) (string, error) {
 	// Construct the request payload
 	payload := map[string]interface{}{
 		"model": "gpt-3.5-turbo",
@@ -75,7 +117,7 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 	}
 
 	// Make the HTTP POST request
-	req, err := http.NewRequest("POST", url, bytes.NewReader(payloadBytes))
+	req, err := http.NewRequest("POST", o.options.URL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", &RequestCreationError{err} //fmt.Errorf("failed creating request: %w", err)
 	}
@@ -126,5 +168,10 @@ func api(apiKey string, url string, userRequest string) (string, error) {
 			Code:    errorResponse.Error.Code,
 		}
 	}
-
 }
+
+//func api(apiKey string, url string, userRequest string) (string, error) {
+//
+//
+//
+//}
