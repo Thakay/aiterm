@@ -47,6 +47,7 @@ To start `aiterm`, simply run the built executable. Here's a basic example:
 <p align="center">
   <img alig src="https://github.com/Thakay/aiterm/blob/main/usage.gif" />
 </p>
+
 ## Contributing
 
 Contributions are welcome! If you're interested in improving `aiterm`, please follow these steps:
