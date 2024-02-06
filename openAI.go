@@ -65,7 +65,6 @@ type OpenAIOptions struct {
 	topP             float64
 	frequencyPenalty float64
 	presencePenalty  float64
-	withContext      bool
 }
 
 func defaultMessages() []map[string]string {
@@ -77,7 +76,7 @@ func defaultMessages() []map[string]string {
 	}
 }
 
-func NewOpenAIProvider(options *OpenAIOptions) *OpenAIProvider {
+func NewOpenAIProvider(options *OpenAIOptions) ContextualAPIProvider {
 	if options == nil {
 		options = &OpenAIOptions{
 			ProviderOptions: &ProviderOptions{
@@ -90,7 +89,6 @@ func NewOpenAIProvider(options *OpenAIOptions) *OpenAIProvider {
 			topP:             1.0,
 			frequencyPenalty: 0.0,
 			presencePenalty:  0.0,
-			withContext:      true,
 		}
 	}
 	if options.ProviderOptions == nil {
@@ -104,9 +102,6 @@ func NewOpenAIProvider(options *OpenAIOptions) *OpenAIProvider {
 	return &OpenAIProvider{*options}
 }
 
-func (o *OpenAIProvider) setWithContext(with bool) {
-	o.options.withContext = with
-}
 func (o *OpenAIProvider) addMessage(role string, message string) {
 	o.options.messages = append(o.options.messages, map[string]string{"role": role, "content": message})
 }
@@ -124,11 +119,76 @@ func (o *OpenAIProvider) constructPayload() map[string]interface{} {
 		"presence_penalty":  o.options.presencePenalty,
 	}
 }
+
 func (o *OpenAIProvider) fetch(apiKey string, userRequest string) (string, error) {
 	// Construct the request payload
-	if !o.options.withContext {
-		o.clearMessages()
+	o.clearMessages()
+	payload := o.constructPayload()
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", &MarshalingError{err} //fmt.Errorf("failed marshaling payload: %w", err)
 	}
+
+	// Make the HTTP POST request
+	req, err := http.NewRequest("POST", o.options.URL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", &RequestCreationError{err} //fmt.Errorf("failed creating request: %w", err)
+	}
+
+	// Set the necessary headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	// Execute the request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", &ExecutionError{err} //fmt.Errorf("failed executing request: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Fatal("Could not close the Body with the error: ", err)
+		}
+	}(resp.Body)
+
+	// Read and print the response body
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", &ResponseReadError{err} //fmt.Errorf("failed reading response body: %w", err)
+	}
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode <= http.StatusMultipleChoices {
+
+		var response SuccessResponse
+		err = json.Unmarshal(responseBody, &response)
+		if err != nil {
+			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the success response: %w", err)
+		}
+		fmt.Println("-----resp------")
+		fmt.Println(response)
+		if len(response.Choices) > 0 {
+			res := fmt.Sprintf("%s", response.Choices[0].Message.Content)
+			return res, nil
+		}
+		return "", fmt.Errorf("success response does not contain choices")
+	} else {
+
+		var errorResponse ErrorResponse
+		err = json.Unmarshal(responseBody, &errorResponse)
+		if err != nil {
+			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the error response: %w", err)
+		}
+		return "", &APIError{
+			Type:    errorResponse.Error.Type,
+			Message: errorResponse.Error.Message,
+			Code:    errorResponse.Error.Code,
+		}
+	}
+}
+func (o *OpenAIProvider) fetchWithContext(apiKey string, userRequest string) (string, error) {
+	// Construct the request payload
+	
 	o.addMessage("user", userRequest)
 	payload := o.constructPayload()
 
