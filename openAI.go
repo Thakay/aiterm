@@ -51,7 +51,7 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-type openAIProvider struct {
+type OpenAIProvider struct {
 	options OpenAIOptions
 }
 
@@ -65,20 +65,32 @@ type OpenAIOptions struct {
 	topP             float64
 	frequencyPenalty float64
 	presencePenalty  float64
+	withContext      bool
 }
 
-func NewOpenAIProvider(options *OpenAIOptions) APIProvider {
+func defaultMessages() []map[string]string {
+	return []map[string]string{
+		{
+			"role":    "system",
+			"content": "you are a linux command interpreter that convert the users natural language request to the closest and most accurate unix (linux) commands list only nothing extra. if the requested command does not resemble to a command simply say not a command. ouput only the command everytime no instructions nor explanations.",
+		},
+	}
+}
+
+func NewOpenAIProvider(options *OpenAIOptions) *OpenAIProvider {
 	if options == nil {
 		options = &OpenAIOptions{
 			ProviderOptions: &ProviderOptions{
 				URL: defaultEndPoint,
 			},
+			messages:         defaultMessages(),
 			model:            "gpt-3.5-turbo",
 			temperature:      1.0,
 			maxTokens:        256,
 			topP:             1.0,
 			frequencyPenalty: 0.0,
 			presencePenalty:  0.0,
+			withContext:      true,
 		}
 	}
 	if options.ProviderOptions == nil {
@@ -86,30 +98,39 @@ func NewOpenAIProvider(options *OpenAIOptions) APIProvider {
 	} else if options.ProviderOptions.URL == "" {
 		options.ProviderOptions.URL = defaultEndPoint
 	}
-
-	return &openAIProvider{*options}
+	if options.messages == nil {
+		options.messages = defaultMessages()
+	}
+	return &OpenAIProvider{*options}
 }
 
-func (o *openAIProvider) fetch(apiKey string, userRequest string) (string, error) {
-	// Construct the request payload
-	payload := map[string]interface{}{
-		"model": "gpt-3.5-turbo",
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "you are a linux command interpreter that convert the users natural language request to the closest and most accurate unix (linux) commands list only nothing extra. if the requested command does not resemble to a command simply say not a command. ouput only the command everytime no instructions nor explanations.",
-			},
-			{
-				"role":    "user",
-				"content": userRequest,
-			},
-		},
-		"temperature":       1.0,
-		"max_tokens":        256,
-		"top_p":             1.0,
-		"frequency_penalty": 0.0,
-		"presence_penalty":  0.0,
+func (o *OpenAIProvider) setWithContext(with bool) {
+	o.options.withContext = with
+}
+func (o *OpenAIProvider) addMessage(role string, message string) {
+	o.options.messages = append(o.options.messages, map[string]string{"role": role, "content": message})
+}
+func (o *OpenAIProvider) clearMessages() {
+	o.options.messages = defaultMessages()
+}
+func (o *OpenAIProvider) constructPayload() map[string]interface{} {
+	return map[string]interface{}{
+		"model":             o.options.model,
+		"messages":          o.options.messages,
+		"temperature":       o.options.temperature,
+		"max_tokens":        o.options.maxTokens,
+		"top_p":             o.options.topP,
+		"frequency_penalty": o.options.frequencyPenalty,
+		"presence_penalty":  o.options.presencePenalty,
 	}
+}
+func (o *OpenAIProvider) fetch(apiKey string, userRequest string) (string, error) {
+	// Construct the request payload
+	if !o.options.withContext {
+		o.clearMessages()
+	}
+	o.addMessage("user", userRequest)
+	payload := o.constructPayload()
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -151,8 +172,12 @@ func (o *openAIProvider) fetch(apiKey string, userRequest string) (string, error
 		if err != nil {
 			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the success response: %w", err)
 		}
+		fmt.Println("-----resp------")
+		fmt.Println(response)
 		if len(response.Choices) > 0 {
-			return fmt.Sprintf("%s", response.Choices[0].Message.Content), nil
+			res := fmt.Sprintf("%s", response.Choices[0].Message.Content)
+			o.addMessage("assistant", res)
+			return res, nil
 		}
 		return "", fmt.Errorf("success response does not contain choices")
 	} else {
@@ -169,9 +194,3 @@ func (o *openAIProvider) fetch(apiKey string, userRequest string) (string, error
 		}
 	}
 }
-
-//func api(apiKey string, url string, userRequest string) (string, error) {
-//
-//
-//
-//}
