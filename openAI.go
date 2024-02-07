@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -127,7 +128,7 @@ func (o *OpenAIProvider) constructPayload() map[string]interface{} {
 	}
 }
 
-func NewFetchConfigOAI(withCtxt bool) FetchConfig {
+func (o *OpenAIProvider) newFetchConfig(withCtxt bool) FetchConfig {
 	return func(o interface{}) {
 		if provider, ok := o.(*OpenAIProvider); ok {
 			provider.options.withContext = withCtxt
@@ -137,18 +138,16 @@ func NewFetchConfigOAI(withCtxt bool) FetchConfig {
 	}
 }
 
+func (o *OpenAIProvider) setAPIKey(apikey string) {
+	o.options.APIKey = apikey
+}
 func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string, error) {
 	// Construct the request payload
 	for _, opt := range opts {
 		opt(o)
 	}
 	if !o.options.withContext {
-		println("wow it works!")
-		return "dang it", nil
 		o.clearMessages()
-	}
-	if o.options.withContext {
-		return "bang bang", nil
 	}
 	o.addMessage("user", userRequest)
 	payload := o.constructPayload()
@@ -208,10 +207,32 @@ func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string,
 		if err != nil {
 			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the error response: %w", err)
 		}
-		return "", &APIError{
+		return "", &OAIAPIError{
 			Type:    errorResponse.Error.Type,
 			Message: errorResponse.Error.Message,
 			Code:    errorResponse.Error.Code,
 		}
 	}
+}
+
+func (o *OpenAIProvider) hasAPIKey() bool {
+	if o.options.APIKey != "" {
+		return true
+	}
+	return true
+}
+
+func (o *OpenAIProvider) handleAPIError(err error) error {
+	var apiErr *OAIAPIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case "invalid_api_key":
+			return &APIKeyError{OriginalError: apiErr}
+		default:
+			log.Printf("API error: %v\n", apiErr)
+			return apiErr
+		}
+	}
+	return err
+
 }
