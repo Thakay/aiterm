@@ -1,12 +1,8 @@
 package main
 
+type FetchConfig func(o interface{})
 type APIProvider interface {
-	fetch(apiKey string, userRequest string) (string, error)
-	//modifyOptions(options interface{}) error
-}
-type ContextualAPIProvider interface {
-	APIProvider
-	fetchWithContext(apiKey string, userRequest string) (string, error)
+	fetch(userRequest string, opts ...FetchConfig) (string, error)
 }
 type ProviderOptions struct {
 	URL    string
