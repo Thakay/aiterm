@@ -192,8 +192,8 @@ func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string,
 		if err != nil {
 			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the success response: %w", err)
 		}
-		fmt.Println("-----resp------")
-		fmt.Println(response)
+		//fmt.Println("-----resp------")
+		//fmt.Println(response)
 		if len(response.Choices) > 0 {
 			res := fmt.Sprintf("%s", response.Choices[0].Message.Content)
 			o.addMessage("assistant", res)
