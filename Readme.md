@@ -45,7 +45,7 @@ To start `aiterm`, simply run the built executable. Here's a basic example:
 ./aiterm "find all the files that has the word foo in them in the previous directory"
 ```
 <p align="center">
-  <img alig src="https://github.com/Thakay/aiterm/blob/main/usage.gif" />
+  <img alig src="https://github.com/Thakay/aiterm/blob/main/usage1.gif" />
 </p>
 
 ## Contributing
