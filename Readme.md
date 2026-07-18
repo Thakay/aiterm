@@ -3,7 +3,6 @@
 ![MIT License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ## Introduction
-
 `aiterm` is a command-line application that translate natural 
 language to Unix commands, leveraging AI APIs. Designed for developers, system administrators, 
 and anyone accustomed to the terminal but seeking a more intuitive way 
