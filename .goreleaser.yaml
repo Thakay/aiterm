@@ -38,6 +38,8 @@ archives:
       - LICENSE
       - README.md
       - CHANGELOG.md
+      - src: completions/*
+        dst: completions
 
 checksum:
   name_template: checksums.txt

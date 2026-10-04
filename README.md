@@ -69,6 +69,37 @@ cd aiterm
 go build -o aiterm .
 ```
 
+## Shell completions
+
+Completion scripts for bash, zsh and fish live in `completions/` and are
+included in the release archives. They complete the flag names; `-timeout`
+also suggests a few durations. Everything after the flags is the request,
+so there is nothing to complete there.
+
+For bash, copy the script into your completion directory and start a new
+shell:
+
+```bash
+sudo cp completions/aiterm.bash /etc/bash_completion.d/aiterm
+```
+
+On macOS with Homebrew the directory is `/usr/local/etc/bash_completion.d/`
+(or `/opt/homebrew/etc/bash_completion.d/` on Apple silicon).
+
+For zsh, copy the script as `_aiterm` into a directory on your `fpath`:
+
+```bash
+mkdir -p ~/.zsh/completions
+cp completions/_aiterm ~/.zsh/completions/
+autoload -Uz compinit && compinit
+```
+
+For fish, copy the script into your completions directory:
+
+```bash
+cp completions/aiterm.fish ~/.config/fish/completions/
+```
+
 ## Configuration
 
 `aiterm` needs an API key. Flags go before the request and take precedence over
