@@ -7,7 +7,7 @@
 
 _aiterm()
 {
-    local cur prev
+    local cur prev i
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -23,11 +23,32 @@ _aiterm()
             ;;
     esac
 
-    # Flags go before the request. Once the request has started there is
-    # nothing to complete: it is free text.
+    # Flags go before the request. Once the request has started, or after
+    # "--", there is nothing to complete: it is free text.
+    for (( i = 1; i < COMP_CWORD; i++ )); do
+        case "${COMP_WORDS[i]}" in
+            --)
+                return 0
+                ;;
+            -key|-url|-model|-timeout)
+                # Skip the value. bash splits "-flag=value" into "-flag", "="
+                # and "value".
+                if [[ "${COMP_WORDS[i+1]}" == "=" ]]; then
+                    (( i += 2 ))
+                else
+                    (( i++ ))
+                fi
+                ;;
+            -*)
+                ;;
+            *)
+                return 0
+                ;;
+        esac
+    done
+
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "-key -url -model -timeout -version -h -help" -- "$cur") )
-        return 0
     fi
     return 0
 }

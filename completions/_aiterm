@@ -6,11 +6,13 @@
 # fpath, e.g. ~/.zsh/completions, and run compinit. See the README's Shell
 # completions section for details.
 
-_arguments -s -S \
+# Flags go before the request, so -A stops offering them once it has started.
+_arguments -S -A '-*' \
   '-key=[OpenAI API key]:API key:' \
   '-url=[chat completions endpoint of an OpenAI compatible API]:URL:' \
   '-model=[model to use]:model:' \
   '-timeout=[how long to wait for the API]:duration:(30s 2m 5m)' \
   '-version[print version information and exit]' \
   '-h[show help information]' \
+  '-help[show help information]' \
   '*:request:'
