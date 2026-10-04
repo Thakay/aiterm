@@ -7,9 +7,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
+	"golang.org/x/term"
 )
 
 type App struct {
@@ -51,12 +55,26 @@ func (a *App) Run() error {
 	for {
 		cmdstr, err := a.Client.fetch(a.userRequest, a.fetchCfg)
 		if err != nil {
-			return a.HandleAPIError(err)
+			err = a.HandleAPIError(err)
+			var keyErr *APIKeyError
+			if !errors.As(err, &keyErr) {
+				return err
+			}
+			// Let the user fix a rejected key without restarting aiterm.
+			if ok, perr := a.promptForAPIKey("Enter a valid OpenAI API key for this session, or leave empty to exit: "); perr != nil || !ok {
+				return err
+			}
+			continue
 		}
 
 		ok, validCmdstr := a.ValidateCmd(cmdstr)
 		if !ok {
-			fmt.Fprintln(a.out, "That does not look like a command. Please retry with a different prompt (or q to quit).")
+			if cleaned := cleanCmd(cmdstr); hasHiddenRunes(cleaned) {
+				fmt.Fprintf(a.out, "The reply contains control or invisible characters, so it will not be offered to run: %q\n", cleaned)
+			} else {
+				fmt.Fprintln(a.out, "That does not look like a command.")
+			}
+			fmt.Fprintln(a.out, "Please retry with a different prompt (or q to quit).")
 			fmt.Fprint(a.out, "-> ")
 			input, err := a.readInput()
 			if err != nil {
@@ -90,6 +108,9 @@ func (a *App) HandleCmd(cmd string) (bool, error) {
 		fmt.Fprintln(a.out, "*) To send a new request with context enter: r")
 		fmt.Fprintln(a.out, "*) To send a new request without context enter: w")
 		fmt.Fprintln(a.out, "*) To exit enter: q")
+		if lines := strings.Count(cmd, "\n") + 1; lines > 1 {
+			fmt.Fprintf(a.out, "Note: this command has %d lines, and all of them run when you enter y.\n", lines)
+		}
 		fmt.Fprint(a.out, "-> ")
 		input, err := a.readInput()
 		if err != nil {
@@ -155,8 +176,14 @@ func (a *App) HandleEmptyAPIKey() (bool, error) {
 	}
 
 	fmt.Fprintln(a.out, "No API key found. Set the OPENAI_KEY environment variable (or pass -key) to skip this prompt.")
-	fmt.Fprint(a.out, "Enter your OpenAI API key for this session, or leave empty to exit: ")
-	input, err := a.readInput()
+	return a.promptForAPIKey("Enter your OpenAI API key for this session, or leave empty to exit: ")
+}
+
+// promptForAPIKey asks for a key for this session. It reports false when the
+// user leaves the answer empty.
+func (a *App) promptForAPIKey(prompt string) (bool, error) {
+	fmt.Fprint(a.out, prompt)
+	input, err := a.readSecret()
 	if err != nil {
 		return false, err
 	}
@@ -171,23 +198,17 @@ func (a *App) HandleInvalidAPIKey() {
 	fmt.Fprintln(a.errOut, "The API key was rejected. Please set a valid key in OPENAI_KEY (or pass -key) and retry.")
 }
 
-// shellLanguageTags are info strings models commonly put on a markdown code fence.
-var shellLanguageTags = map[string]bool{
-	"bash": true, "sh": true, "shell": true, "zsh": true, "fish": true,
-	"console": true, "shell-session": true, "text": true,
-}
-
 // cleanCmd strips the decorations models sometimes add around a command even when
-// told not to: markdown code fences, inline backticks and a leading "$ " prompt.
+// told not to: markdown code fences, inline backticks and "$ " prompts.
 func cleanCmd(cmd string) string {
-	cmd = strings.TrimSpace(cmd)
+	cmd = strings.TrimSpace(strings.ReplaceAll(cmd, "\r\n", "\n"))
 
 	if len(cmd) >= 6 && strings.HasPrefix(cmd, "```") && strings.HasSuffix(cmd, "```") {
 		cmd = strings.TrimSuffix(strings.TrimPrefix(cmd, "```"), "```")
+		// In a multi line fence the opening line holds the info string
+		// (usually a language such as bash), never part of the command.
 		if i := strings.IndexByte(cmd, '\n'); i >= 0 {
-			if tag := strings.TrimSpace(cmd[:i]); tag == "" || shellLanguageTags[strings.ToLower(tag)] {
-				cmd = cmd[i+1:]
-			}
+			cmd = cmd[i+1:]
 		}
 		cmd = strings.TrimSpace(cmd)
 	}
@@ -196,12 +217,38 @@ func cleanCmd(cmd string) string {
 		cmd = strings.TrimSpace(cmd[1 : len(cmd)-1])
 	}
 
-	return strings.TrimSpace(strings.TrimPrefix(cmd, "$ "))
+	if strings.HasPrefix(cmd, "$ ") {
+		lines := strings.Split(cmd, "\n")
+		for i, line := range lines {
+			lines[i] = strings.TrimPrefix(line, "$ ")
+		}
+		cmd = strings.Join(lines, "\n")
+	}
+
+	return strings.TrimSpace(cmd)
 }
 
+// hiddenRune reports whether r can change how a command looks in the terminal
+// without being visible itself: control characters (a carriage return or an
+// escape sequence can overwrite what was printed), bidi overrides and zero width
+// characters.
+func hiddenRune(r rune) bool {
+	if r == '\n' || r == '\t' {
+		return false
+	}
+	return unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp)
+}
+
+func hasHiddenRunes(s string) bool {
+	return !utf8.ValidString(s) || strings.IndexFunc(s, hiddenRune) >= 0
+}
+
+// ValidateCmd cleans a model reply and reports whether it can be offered as a
+// command. Replies with hidden characters are refused, because what the
+// terminal shows could differ from what sh would run.
 func (a *App) ValidateCmd(cmd string) (bool, string) {
 	cmd = cleanCmd(cmd)
-	if normalized := strings.TrimSuffix(strings.ToLower(cmd), "."); cmd == "" || normalized == "not a command" {
+	if normalized := strings.TrimSuffix(strings.ToLower(cmd), "."); cmd == "" || normalized == "not a command" || hasHiddenRunes(cmd) {
 		return false, ""
 	}
 	return true, cmd
@@ -228,6 +275,20 @@ func (a *App) readInput() (string, error) {
 	return strings.TrimSpace(input), nil
 }
 
+// readSecret reads a line without echoing it when stdin is a terminal, so a key
+// typed at the prompt does not end up in the scrollback.
+func (a *App) readSecret() (string, error) {
+	if f, ok := a.in.(*os.File); ok && a.reader.Buffered() == 0 && term.IsTerminal(int(f.Fd())) {
+		b, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(a.out)
+		if err != nil {
+			return "", &InputReadError{err}
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return a.readInput()
+}
+
 // executeCmd runs cmd through sh, streaming its output so long running and
 // interactive commands behave as if they were typed into the terminal.
 func (a *App) executeCmd(cmd string) error {
@@ -236,8 +297,12 @@ func (a *App) executeCmd(cmd string) error {
 	c.Stdin = a.in
 	c.Stdout = a.out
 	c.Stderr = a.errOut
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("command failed: %w", err)
-	}
-	return nil
+
+	// Ctrl+C should stop the command, not aiterm: the command still receives the
+	// interrupt from the terminal, and aiterm goes back to the menu.
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	defer signal.Stop(interrupts)
+
+	return c.Run()
 }

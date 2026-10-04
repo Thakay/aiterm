@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type MarshalingError struct {
 	OriginalError error
@@ -60,7 +63,19 @@ type OAIAPIError struct {
 }
 
 func (e *OAIAPIError) Error() string {
-	return fmt.Sprintf("API error (status %d): %s - %s - %s", e.StatusCode, e.Type, e.Message, e.Code)
+	var b strings.Builder
+	fmt.Fprintf(&b, "API error (status %d", e.StatusCode)
+	if e.Type != "" {
+		fmt.Fprintf(&b, ", %s", e.Type)
+	}
+	b.WriteString(")")
+	if e.Message != "" {
+		fmt.Fprintf(&b, ": %s", e.Message)
+	}
+	if e.Code != "" {
+		fmt.Fprintf(&b, " (code %s)", e.Code)
+	}
+	return b.String()
 }
 
 type InputReadError struct {

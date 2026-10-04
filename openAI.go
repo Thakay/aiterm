@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"runtime"
 	"time"
@@ -15,7 +16,11 @@ import (
 const (
 	defaultEndPoint = "https://api.openai.com/v1/chat/completions"
 	defaultModel    = "gpt-4.1-mini"
-	defaultTimeout  = 60 * time.Second
+	defaultTimeout  = 2 * time.Minute
+
+	// maxResponseBytes bounds how much of a response is read. A reply is one
+	// short command, so anything near this size is a misbehaving endpoint.
+	maxResponseBytes = 1 << 20
 )
 
 type ErrorResponse struct {
@@ -61,16 +66,15 @@ type OpenAIProvider struct {
 	httpClient *http.Client
 }
 
+// OpenAIOptions configures an OpenAIProvider. Sampling parameters are left to
+// the server defaults: reasoning models reject max_tokens and custom
+// temperatures, and a reply is a single command anyway.
 type OpenAIOptions struct {
 	*ProviderOptions
-	model            string
-	messages         []map[string]string
-	temperature      float64
-	maxTokens        int
-	topP             float64
-	frequencyPenalty float64
-	presencePenalty  float64
-	withContext      bool
+	model       string
+	messages    []map[string]string
+	timeout     time.Duration
+	withContext bool
 }
 
 // osName returns a human friendly name for the operating system aiterm runs on,
@@ -111,13 +115,8 @@ func NewOpenAIProvider(apiKey string, options *OpenAIOptions) APIProvider {
 				URL:    defaultEndPoint,
 				APIKey: apiKey,
 			},
-			messages:         defaultMessages(),
-			model:            defaultModel,
-			temperature:      1.0,
-			maxTokens:        256,
-			topP:             1.0,
-			frequencyPenalty: 0.0,
-			presencePenalty:  0.0,
+			messages: defaultMessages(),
+			model:    defaultModel,
 		}
 	}
 	if options.ProviderOptions == nil {
@@ -136,9 +135,12 @@ func NewOpenAIProvider(apiKey string, options *OpenAIOptions) APIProvider {
 	if options.messages == nil {
 		options.messages = defaultMessages()
 	}
+	if options.timeout <= 0 {
+		options.timeout = defaultTimeout
+	}
 	return &OpenAIProvider{
 		options:    *options,
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		httpClient: &http.Client{Timeout: options.timeout},
 	}
 }
 
@@ -147,13 +149,8 @@ func (o *OpenAIProvider) clearMessages() {
 }
 func (o *OpenAIProvider) constructPayload(messages []map[string]string) map[string]interface{} {
 	return map[string]interface{}{
-		"model":             o.options.model,
-		"messages":          messages,
-		"temperature":       o.options.temperature,
-		"max_tokens":        o.options.maxTokens,
-		"top_p":             o.options.topP,
-		"frequency_penalty": o.options.frequencyPenalty,
-		"presence_penalty":  o.options.presencePenalty,
+		"model":    o.options.model,
+		"messages": messages,
 	}
 }
 
@@ -202,6 +199,10 @@ func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string,
 	// Execute the request
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			err = fmt.Errorf("no response within %v, raise the limit with -timeout or %s: %w", o.httpClient.Timeout, varTimeoutName, err)
+		}
 		return "", &ExecutionError{err}
 	}
 	defer func() {
@@ -210,9 +211,12 @@ func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string,
 		}
 	}()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return "", &ResponseReadError{err}
+	}
+	if len(responseBody) > maxResponseBytes {
+		return "", &ResponseReadError{fmt.Errorf("response is larger than %d bytes", maxResponseBytes)}
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

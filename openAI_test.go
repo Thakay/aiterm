@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestProvider(t *testing.T, url string) *OpenAIProvider {
@@ -12,9 +14,6 @@ func newTestProvider(t *testing.T, url string) *OpenAIProvider {
 	p, ok := NewOpenAIProvider("sk-test", &OpenAIOptions{
 		ProviderOptions: &ProviderOptions{URL: url},
 		model:           "gpt-test",
-		temperature:     1.0,
-		maxTokens:       256,
-		topP:            1.0,
 		withContext:     true,
 	}).(*OpenAIProvider)
 	if !ok {
@@ -39,6 +38,13 @@ func TestNewOpenAIProviderDefaults(t *testing.T) {
 	}
 	if p.httpClient == nil || p.httpClient.Timeout != defaultTimeout {
 		t.Errorf("http client should time out after %v", defaultTimeout)
+	}
+}
+
+func TestNewOpenAIProviderTimeout(t *testing.T) {
+	p := NewOpenAIProvider("sk", &OpenAIOptions{timeout: 5 * time.Second}).(*OpenAIProvider)
+	if p.httpClient.Timeout != 5*time.Second {
+		t.Errorf("timeout = %v, want 5s", p.httpClient.Timeout)
 	}
 }
 
@@ -87,9 +93,14 @@ func TestFetchSuccess(t *testing.T) {
 	}
 
 	body := srv.lastBody(t)
-	for key, want := range map[string]interface{}{"model": "gpt-test", "max_tokens": 256.0, "temperature": 1.0, "top_p": 1.0} {
-		if body[key] != want {
-			t.Errorf("payload[%q] = %v, want %v", key, body[key], want)
+	if body["model"] != "gpt-test" {
+		t.Errorf("payload model = %v, want gpt-test", body["model"])
+	}
+	// Reasoning models reject max_tokens and custom sampling parameters, so
+	// none are sent and every model works.
+	for _, key := range []string{"max_tokens", "temperature", "top_p", "frequency_penalty", "presence_penalty"} {
+		if _, ok := body[key]; ok {
+			t.Errorf("payload should not contain %q: %v", key, body)
 		}
 	}
 	msgs := messagesOf(t, body)
@@ -183,6 +194,32 @@ func TestFetchNoChoices(t *testing.T) {
 	p := newTestProvider(t, srv.URL)
 	if _, err := p.fetch("list files"); err == nil || !strings.Contains(err.Error(), "choices") {
 		t.Fatalf("fetch() error = %v, want a missing choices error", err)
+	}
+}
+
+func TestFetchTimeout(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) }) // runs first, so Close does not wait
+
+	p := NewOpenAIProvider("sk", &OpenAIOptions{ProviderOptions: &ProviderOptions{URL: srv.URL}, timeout: 50 * time.Millisecond}).(*OpenAIProvider)
+	_, err := p.fetch("list files")
+	var execErr *ExecutionError
+	if !errors.As(err, &execErr) || !strings.Contains(err.Error(), "-timeout") {
+		t.Fatalf("fetch() error = %v, want an *ExecutionError that explains how to raise the timeout", err)
+	}
+}
+
+func TestFetchResponseTooLarge(t *testing.T) {
+	srv := newChatServer(t, 200, `{"choices":[],"padding":"`+strings.Repeat("a", maxResponseBytes)+`"}`)
+	p := newTestProvider(t, srv.URL)
+	_, err := p.fetch("list files")
+	var readErr *ResponseReadError
+	if !errors.As(err, &readErr) || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("fetch() error = %v, want a *ResponseReadError about the size", err)
 	}
 }
 

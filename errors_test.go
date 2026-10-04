@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -31,10 +30,20 @@ func TestErrorMessagesAndUnwrap(t *testing.T) {
 }
 
 func TestOAIAPIErrorMessage(t *testing.T) {
-	err := &OAIAPIError{StatusCode: 429, Type: "requests", Message: "Rate limit reached", Code: "rate_limit_exceeded"}
-	for _, part := range []string{"429", "requests", "Rate limit reached", "rate_limit_exceeded"} {
-		if !strings.Contains(err.Error(), part) {
-			t.Errorf("Error() = %q, missing %q", err.Error(), part)
+	tests := []struct {
+		err  *OAIAPIError
+		want string
+	}{
+		{
+			&OAIAPIError{StatusCode: 429, Type: "requests", Message: "Rate limit reached", Code: "rate_limit_exceeded"},
+			"API error (status 429, requests): Rate limit reached (code rate_limit_exceeded)",
+		},
+		{&OAIAPIError{StatusCode: 502, Type: "http_error", Message: "Bad Gateway"}, "API error (status 502, http_error): Bad Gateway"},
+		{&OAIAPIError{StatusCode: 500}, "API error (status 500)"},
+	}
+	for _, tt := range tests {
+		if got := tt.err.Error(); got != tt.want {
+			t.Errorf("Error() = %q, want %q", got, tt.want)
 		}
 	}
 }

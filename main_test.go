@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func envFrom(m map[string]string) func(string) string {
@@ -24,34 +25,44 @@ func TestParseArgs(t *testing.T) {
 		{
 			name: "defaults",
 			args: []string{"list files"},
-			want: config{url: defaultEndPoint, model: defaultModel, prompt: "list files"},
+			want: config{url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout, prompt: "list files"},
 		},
 		{
 			name: "environment",
 			args: []string{"list files"},
-			env:  map[string]string{varKeyName: "sk-env", varURLName: "http://localhost:11434/v1/chat/completions", varModelName: "llama3"},
-			want: config{apiKey: "sk-env", url: "http://localhost:11434/v1/chat/completions", model: "llama3", prompt: "list files"},
+			env:  map[string]string{varKeyName: "sk-env", varURLName: "http://localhost:11434/v1/chat/completions", varModelName: "llama3", varTimeoutName: "5m"},
+			want: config{apiKey: "sk-env", url: "http://localhost:11434/v1/chat/completions", model: "llama3", timeout: 5 * time.Minute, prompt: "list files"},
 		},
 		{
 			name: "flags win over environment",
-			args: []string{"-key", "sk-flag", "-url", "http://example.test", "-model", "gpt-flag", "list files"},
-			env:  map[string]string{varKeyName: "sk-env", varURLName: "http://env.test", varModelName: "gpt-env"},
-			want: config{apiKey: "sk-flag", url: "http://example.test", model: "gpt-flag", prompt: "list files"},
+			args: []string{"-key", "sk-flag", "-url", "http://example.test", "-model", "gpt-flag", "-timeout", "30s", "list files"},
+			env:  map[string]string{varKeyName: "sk-env", varURLName: "http://env.test", varModelName: "gpt-env", varTimeoutName: "5m"},
+			want: config{apiKey: "sk-flag", url: "http://example.test", model: "gpt-flag", timeout: 30 * time.Second, prompt: "list files"},
 		},
 		{
 			name: "unquoted prompt is joined",
 			args: []string{"find", "all", "go", "files"},
-			want: config{url: defaultEndPoint, model: defaultModel, prompt: "find all go files"},
+			want: config{url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout, prompt: "find all go files"},
 		},
 		{
 			name: "no prompt",
 			args: []string{"-key", "sk"},
-			want: config{apiKey: "sk", url: defaultEndPoint, model: defaultModel},
+			want: config{apiKey: "sk", url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout},
+		},
+		{
+			name: "flag like words after -- stay in the prompt",
+			args: []string{"--", "explain", "the", "-version", "flag"},
+			want: config{url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout, prompt: "explain the -version flag"},
+		},
+		{
+			name: "dashes that are not flags stay in the prompt",
+			args: []string{"files", "changed", "-5", "days", "ago"},
+			want: config{url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout, prompt: "files changed -5 days ago"},
 		},
 		{
 			name: "version flag",
 			args: []string{"-version"},
-			want: config{url: defaultEndPoint, model: defaultModel, showVersion: true},
+			want: config{url: defaultEndPoint, model: defaultModel, timeout: defaultTimeout, showVersion: true},
 		},
 	}
 
@@ -78,9 +89,58 @@ func TestParseArgsErrors(t *testing.T) {
 		t.Errorf("-h should print usage, got %q", out.String())
 	}
 
-	out.Reset()
-	if _, err := parseArgs([]string{"-nope"}, envFrom(nil), &out); err == nil {
-		t.Error("unknown flag should be an error")
+	for _, tt := range []struct {
+		name string
+		args []string
+		env  map[string]string
+		want string
+	}{
+		{"unknown flag", []string{"-nope"}, nil, "flag provided but not defined"},
+		{"flag after the prompt", []string{"list", "files", "-key", "sk-secret"}, nil, "flag -key must come before the request"},
+		{"flag with value after the prompt", []string{"list", "-model=gpt-x"}, nil, "flag -model=gpt-x must come before the request"},
+		{"double dash flag after the prompt", []string{"list", "--timeout", "5s"}, nil, "flag --timeout must come before the request"},
+		{"invalid timeout env", []string{"list"}, map[string]string{varTimeoutName: "soon"}, "invalid AITERM_TIMEOUT"},
+		{"negative timeout", []string{"-timeout", "-5s", "list"}, nil, "must be positive"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if _, err := parseArgs(tt.args, envFrom(tt.env), &out); err == nil {
+				t.Fatal("parseArgs() error = nil")
+			}
+			if !strings.Contains(out.String(), tt.want) {
+				t.Errorf("output = %q, want it to contain %q", out.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestInsecureRemoteURL(t *testing.T) {
+	tests := map[string]bool{
+		"https://api.openai.com/v1/chat/completions": false,
+		"http://localhost:11434/v1/chat/completions": false,
+		"http://LOCALHOST:1234/v1":                   false,
+		"http://127.0.0.1:1234/v1":                   false,
+		"http://[::1]:1234/v1":                       false,
+		"http://192.168.1.20:11434/v1":               true,
+		"http://llm.example.com/v1":                  true,
+		"://bad":                                     false,
+	}
+	for raw, want := range tests {
+		if got := insecureRemoteURL(raw); got != want {
+			t.Errorf("insecureRemoteURL(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestRunWarnsAboutPlainHTTP(t *testing.T) {
+	var out, errOut bytes.Buffer
+	// Nothing listens on port 1, so the request fails right away.
+	args := []string{"-url", "http://192.0.2.1:1/v1/chat/completions", "-key", "sk", "-timeout", "200ms", "list"}
+	if err := run(args, envFrom(nil), strings.NewReader(""), &out, &errOut); err == nil {
+		t.Fatal("run() should fail without a server")
+	}
+	if !strings.Contains(errOut.String(), "warning: http://192.0.2.1:1/v1/chat/completions uses plain http") {
+		t.Errorf("stderr = %q, want a plain http warning", errOut.String())
 	}
 }
 
@@ -110,7 +170,12 @@ func TestVersionString(t *testing.T) {
 	t.Cleanup(func() { version, commit, date = oldVersion, oldCommit, oldDate })
 
 	version, commit, date = "0.2.0", "abc1234", "2026-10-03T00:00:00Z"
-	if got, want := versionString(), "aiterm 0.2.0 (commit abc1234, built 2026-10-03T00:00:00Z)"; got != want {
+	if got, want := versionString(), "aiterm 0.2.0 (commit abc1234, 2026-10-03T00:00:00Z)"; got != want {
+		t.Errorf("versionString() = %q, want %q", got, want)
+	}
+
+	version, commit = "v0.2.0", "none"
+	if got, want := versionString(), "aiterm 0.2.0"; got != want {
 		t.Errorf("versionString() = %q, want %q", got, want)
 	}
 
@@ -129,6 +194,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{"no prompt", nil, "No prompt was provided."},
 		{"blank prompt", []string{"   "}, "No prompt was provided."},
 		{"unknown flag", []string{"-nope", "list"}, "flag provided but not defined"},
+		{"flag after the prompt", []string{"list", "-key", "sk-secret"}, "must come before the request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,6 +279,7 @@ func TestMainExitCodes(t *testing.T) {
 		{"-h", 0},
 		{"", 2},
 		{"-nope", 2},
+		{"list files -key sk-test", 2},
 		// Nothing listens on port 1, so the request fails right away.
 		{"-url http://127.0.0.1:1 -key sk-test list files", 1},
 	}

@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -55,6 +57,16 @@ func TestValidateCmd(t *testing.T) {
 		{"command substitution is preserved", "echo `date`", true, "echo `date`"},
 		{"shell prompt prefix", "$ df -h", true, "df -h"},
 		{"fenced not a command", "```\nnot a command\n```", false, ""},
+		{"fenced with any info string", "```console-session\nls\n```", true, "ls"},
+		{"windows line endings", "```bash\r\nls -la\r\n```\r\n", true, "ls -la"},
+		{"shell prompt on every line", "$ cd /tmp\n$ ls", true, "cd /tmp\nls"},
+		{"tabs are allowed", "printf 'a\tb'", true, "printf 'a\tb'"},
+		{"carriage return hides text", "touch pwned #\rls -la", false, ""},
+		{"escape sequence", "touch pwned; echo hi\x1b[2K\rls", false, ""},
+		{"backspace", "rm -rf ~/x\b\b\b\b\b\b\b\b\bls", false, ""},
+		{"bidi override", "echo \u202eecho safe", false, ""},
+		{"zero width space", "ls\u200b -la", false, ""},
+		{"invalid utf-8", "ls \xff", false, ""},
 	}
 
 	app := &App{}
@@ -154,6 +166,44 @@ func TestHandleCmdExecuteFailureReturnsToMenu(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "oops") {
 		t.Errorf("stderr of the command should be forwarded, got %q", errOut.String())
+	}
+}
+
+func TestHandleCmdWarnsAboutMultiLineCommands(t *testing.T) {
+	app, out, _, _ := testApp(t, &fakeProvider{}, "", "q\n")
+	if _, err := app.HandleCmd("cd /tmp\nls"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Note: this command has 2 lines") {
+		t.Errorf("multi line command should be flagged before the prompt: %q", out.String())
+	}
+
+	app, out, _, _ = testApp(t, &fakeProvider{}, "", "q\n")
+	if _, err := app.HandleCmd("ls"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Note:") {
+		t.Errorf("single line command should not be flagged: %q", out.String())
+	}
+}
+
+// TestOnlyYRunsTheCommand guards the core safety promise: nothing runs unless
+// the user enters y.
+func TestOnlyYRunsTheCommand(t *testing.T) {
+	skipWithoutShell(t)
+	for _, choice := range []string{"", "n", "yes", "Y ", "x", "c", "q", "r\nnew request", "w\nnew request"} {
+		t.Run(fmt.Sprintf("%q", choice), func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "ran")
+			app, out, _, _ := testApp(t, &fakeProvider{}, "", choice+"\nq\n")
+			if _, err := app.HandleCmd("touch " + marker); err != nil {
+				t.Fatal(err)
+			}
+			_, statErr := os.Stat(marker)
+			ranCommand := statErr == nil
+			if want := strings.TrimSpace(choice) == "Y"; ranCommand != want {
+				t.Errorf("command ran = %v, want %v (output %q)", ranCommand, want, out.String())
+			}
+		})
 	}
 }
 
@@ -300,6 +350,23 @@ func TestRunRetriesAfterNotACommand(t *testing.T) {
 	}
 }
 
+func TestRunRefusesHiddenCharacters(t *testing.T) {
+	p := &fakeProvider{apiKey: "k", responses: []string{"touch pwned #\rls -la", "pwd"}}
+	app, out, _, _ := testApp(t, p, "list files", "try again\nq\n")
+	if err := app.Run(); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if !strings.Contains(out.String(), "control or invisible characters") || !strings.Contains(out.String(), `"touch pwned #\rls -la"`) {
+		t.Errorf("hidden characters should be reported with the reply quoted: %q", out.String())
+	}
+	if strings.Contains(out.String(), "Here is the command --> touch") {
+		t.Errorf("the reply must not be offered: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Here is the command --> pwd <--") {
+		t.Errorf("the retry should be offered: %q", out.String())
+	}
+}
+
 func TestRunQuitAfterNotACommand(t *testing.T) {
 	p := &fakeProvider{apiKey: "k", responses: []string{"not a command"}}
 	app, _, _, _ := testApp(t, p, "hello", "q\n")
@@ -388,6 +455,31 @@ func TestRunAPIErrors(t *testing.T) {
 		}
 		if !strings.Contains(errOut.String(), "API key was rejected") {
 			t.Errorf("missing invalid key hint: %q", errOut.String())
+		}
+	})
+
+	t.Run("invalid key replaced at the prompt", func(t *testing.T) {
+		p := &fakeProvider{
+			apiKey:    "bad",
+			errs:      []error{&OAIAPIError{StatusCode: 401, Code: "invalid_api_key"}},
+			responses: []string{"", "ls"},
+			mapErr: func(err error) error {
+				var apiErr *OAIAPIError
+				if errors.As(err, &apiErr) {
+					return &APIKeyError{OriginalError: err}
+				}
+				return err
+			},
+		}
+		app, out, errOut, _ := testApp(t, p, "list", "sk-good\nq\n")
+		if err := app.Run(); err != nil {
+			t.Fatalf("Run() = %v", err)
+		}
+		if p.apiKey != "sk-good" || len(p.requests) != 2 {
+			t.Errorf("apiKey = %q, requests = %q, want the request retried with the new key", p.apiKey, p.requests)
+		}
+		if !strings.Contains(errOut.String(), "API key was rejected") || !strings.Contains(out.String(), "Here is the command --> ls <--") {
+			t.Errorf("stdout %q, stderr %q", out.String(), errOut.String())
 		}
 	})
 
