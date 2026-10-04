@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull request runs are cancelled; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # The two Go releases that receive security fixes. go.mod requires 1.26.
+        go-version: [oldstable, stable]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == 'stable'
+        run: |
+          {
+            echo '### Test coverage'
+            echo
+            echo '```'
+            go tool cover -func=coverage.out | grep '^total:'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: Fuzz the reply validation
+        run: go test -run='^$' -fuzz=FuzzValidateCmd -fuzztime=30s .
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14
+
+      - name: Check that go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+  release-build:
+    name: release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          # Same clean cache setup as the release workflow.
+          cache: false
+
+      # Fails on invalid or deprecated configuration.
+      - name: Check GoReleaser configuration
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+      # `check` only validates the schema. A snapshot also renders every
+      # template and cross compiles all targets, without publishing anything.
+      - name: Build a snapshot release
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+
+      - name: Check the archives the README links to
+        run: |
+          for archive in aiterm_Linux_x86_64 aiterm_Linux_arm64 aiterm_Darwin_x86_64 aiterm_Darwin_arm64; do
+            test -f "dist/$archive.tar.gz" || { echo "::error::dist/$archive.tar.gz is missing"; exit 1; }
+            tar -tzf "dist/$archive.tar.gz" | grep -qx aiterm || { echo "::error::$archive.tar.gz has no aiterm binary at its root"; exit 1; }
+          done
+          test -f dist/checksums.txt
+          tar -xzf dist/aiterm_Linux_x86_64.tar.gz -C "$RUNNER_TEMP" aiterm
+          "$RUNNER_TEMP/aiterm" -version

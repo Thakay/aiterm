@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      # Create the GitHub release and upload the archives.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # GoReleaser needs the full history and tags to find the previous tag.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          # Build published binaries from a clean cache.
+          cache: false
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          # Print the lines between "## [<version>]" and the next "## [" heading
+          # (or the link definitions at the end of the file), without leading
+          # or trailing blank lines.
+          awk -v heading="## [${version}]" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, heading) == 1) found = 1
+              next
+            }
+            found && /^\[[^ ]+\]: / { exit }
+            found {
+              if ($0 ~ /^[[:space:]]*$/) { if (started) blank++; next }
+              for (; blank > 0; blank--) print ""
+              started = 1
+              print
+            }
+          ' CHANGELOG.md > "$notes"
+          if [ -s "$notes" ]; then
+            echo "Using the CHANGELOG.md section for ${version} as release notes."
+            echo "args=release --clean --release-notes ${notes}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::CHANGELOG.md has no section for ${version}, GoReleaser will generate the release notes."
+            echo "args=release --clean" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: ${{ steps.notes.outputs.args }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

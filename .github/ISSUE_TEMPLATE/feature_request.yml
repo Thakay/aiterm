@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest an idea or an improvement for aiterm.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please check the
+        [roadmap](https://github.com/Thakay/aiterm#roadmap) and the
+        [existing issues](https://github.com/Thakay/aiterm/issues) first, in case it is already planned or requested.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve, or what is hard to do today?
+      placeholder: When I ask for a command I do not recognize, I have to look it up before I dare to run it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like aiterm to do? Include example commands, flags or output if you can.
+      placeholder: An `-explain` flag that shows what each part of the suggested command does.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other solutions or workarounds you have tried or thought about.
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on this?
+      description: Contributions are welcome. See the [contributing guide](https://github.com/Thakay/aiterm/blob/main/CONTRIBUTING.md).
+      options:
+        - "Yes, I would like to open a pull request"
+        - "Yes, with some guidance"
+        - "No, but I can help test it"
+        - "No"
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that helps, such as links, screenshots or similar tools.
