@@ -23,11 +23,12 @@ OpenAI compatible API, including local models served by Ollama or LM Studio.
 - **Natural language to commands**: describe the task, get a single command tailored
   to your OS (macOS BSD tools or Linux GNU tools).
 - **You stay in control**: nothing runs until you press `y`. You can also copy the
-  command, edit it before running, or exit.
+  command, edit it before running, or exit. Replies that hide characters from the
+  terminal are refused, and multi line commands are flagged before you confirm.
 - **Follow-up requests**: refine the last answer with context ("now include hidden
   files") or start fresh without it.
-- **Bring your own model**: pick any model with `-model`, and point `-url` at any
-  OpenAI compatible endpoint (Ollama, LM Studio, OpenRouter, ...).
+- **Bring your own model**: pick any model with `-model`, including reasoning models,
+  and point `-url` at any OpenAI compatible endpoint (Ollama, LM Studio, OpenRouter, ...).
 - **Single static binary** for Linux and macOS on amd64 and arm64.
 
 ## Installation
@@ -40,19 +41,21 @@ Download the archive for your platform from the
 
 ```bash
 # macOS on Apple silicon (use Darwin_x86_64 for Intel Macs)
-curl -sSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Darwin_arm64.tar.gz | tar -xz aiterm
+curl -fsSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Darwin_arm64.tar.gz | tar -xz aiterm
 sudo mv aiterm /usr/local/bin/
 
 # Linux on x86_64 (use Linux_arm64 for ARM)
-curl -sSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Linux_x86_64.tar.gz | tar -xz aiterm
+curl -fsSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Linux_x86_64.tar.gz | tar -xz aiterm
 sudo mv aiterm /usr/local/bin/
 ```
 
-Each release includes a `checksums.txt` file to verify the download.
+To verify a download, fetch the archive and `checksums.txt` from the release, then run
+`sha256sum --ignore-missing -c checksums.txt` (on macOS:
+`shasum -a 256 --ignore-missing -c checksums.txt`).
 
 ### With Go
 
-Requires Go 1.22 or newer.
+Requires Go 1.26 or newer. Go 1.21 and later download the right toolchain automatically.
 
 ```bash
 go install github.com/Thakay/aiterm@latest
@@ -68,21 +71,22 @@ go build -o aiterm .
 
 ## Configuration
 
-`aiterm` needs an API key. Flags take precedence over environment variables.
+`aiterm` needs an API key. Flags go before the request and take precedence over
+environment variables.
 
-| Flag       | Environment variable | Default                                      | Description                                          |
-|------------|----------------------|----------------------------------------------|------------------------------------------------------|
-| `-key`     | `OPENAI_KEY`         |                                              | API key sent as a bearer token                       |
-| `-model`   | `AITERM_MODEL`       | `gpt-4.1-mini`                               | Model used to generate commands                      |
+| Flag       | Environment variable | Default                                      | Description                                           |
+|------------|----------------------|----------------------------------------------|-------------------------------------------------------|
+| `-key`     | `OPENAI_KEY`         |                                              | API key sent as a bearer token                        |
+| `-model`   | `AITERM_MODEL`       | `gpt-4.1-mini`                               | Model used to generate commands                       |
 | `-url`     | `AITERM_URL`         | `https://api.openai.com/v1/chat/completions` | Chat completions endpoint of an OpenAI compatible API |
-| `-version` |                      |                                              | Print the version and exit                           |
+| `-timeout` | `AITERM_TIMEOUT`     | `2m`                                         | How long to wait for the API, such as `30s` or `5m`   |
+| `-version` |                      |                                              | Print the version and exit                            |
 
-Prefer the environment variable over `-key` so the key does not end up in your shell
-history. If no key is set, `aiterm` asks for one and uses it for the current session.
-
-```bash
-export OPENAI_KEY="sk-..."
-```
+Prefer the environment variable over `-key`, so the key does not end up in your shell
+history or the process list. Set it in your shell profile (`~/.zshrc`, `~/.bashrc`),
+or enter it without echo for the current shell with `read -rs OPENAI_KEY && export OPENAI_KEY`.
+If no key is set, or the key is rejected, `aiterm` asks for one (without echoing it)
+and uses it for the current session.
 
 ### Local models with Ollama
 
@@ -90,15 +94,20 @@ export OPENAI_KEY="sk-..."
 export AITERM_URL="http://localhost:11434/v1/chat/completions"
 export AITERM_MODEL="llama3.2"
 export OPENAI_KEY="ollama"   # Ollama ignores the key, but aiterm expects one to be set
+export AITERM_TIMEOUT="5m"   # optional: give slow local models more time
 ```
 
 ## Usage
 
-Pass your request as arguments. Quotes are optional.
+Pass your request as arguments. Quotes are optional for plain words, but your shell
+expands the arguments before `aiterm` sees them, so quote the request if it contains
+characters such as `*`, `?`, `&`, `|`, `;`, `<`, `>`, `#`, `$` or an apostrophe.
+Single quotes are the safest choice.
 
 ```bash
 aiterm "find all the files that contain the word foo in the parent directory"
 aiterm show the 10 largest files in this folder
+aiterm 'list *.log files older than 7 days'
 ```
 
 `aiterm` shows the suggested command and a menu:
@@ -112,26 +121,32 @@ aiterm show the 10 largest files in this folder
 | `w` | Send a new request without the previous context                     |
 | `q` | Quit                                                                |
 
-If a command fails, `aiterm` prints the exit status and brings the menu back so you
-can edit it or ask for another one.
+If a command fails, or you stop it with Ctrl+C, `aiterm` prints the exit status and
+brings the menu back so you can edit it or ask for another one.
 
 On Linux, copying to the clipboard needs `xclip`, `xsel` or `wl-clipboard`. Without
 one of them, `aiterm` prints the command so you can copy it yourself.
 
 > [!WARNING]
 > Commands come from a language model and can be wrong or destructive. Always read a
-> command before you run it.
+> command before you run it. `aiterm` refuses replies containing control or invisible
+> characters (which could make the terminal show something other than what runs) and
+> warns when a command spans several lines.
 
 ## Development
 
 ```bash
-go test -race ./...      # run the tests
-go vet ./...             # static checks
-golangci-lint run        # lint (https://golangci-lint.run)
+make test       # go test -race ./...
+make lint       # golangci-lint run (https://golangci-lint.run)
+make fuzz       # fuzz the model reply validation
+make snapshot   # build the release archives locally with GoReleaser
 ```
 
-Every pull request runs the same checks in CI on Linux and macOS. Releases are built
-by [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed. See
+The tests cover about 96% of the statements and never call a real API: they use a
+scripted fake provider and an `httptest` server. Every pull request runs the tests on
+Linux and macOS with the two supported Go releases, plus fuzzing, golangci-lint,
+CodeQL, govulncheck and a GoReleaser snapshot build. Releases are built by
+[GoReleaser](https://goreleaser.com) when a `v*` tag is pushed. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Roadmap
