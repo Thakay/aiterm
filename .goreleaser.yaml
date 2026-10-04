@@ -39,6 +39,8 @@ archives:
       - README.md
       - CHANGELOG.md
       - docs/aiterm.1
+      - src: completions/*
+        dst: completions
 
 checksum:
   name_template: checksums.txt
