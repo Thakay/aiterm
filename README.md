@@ -134,6 +134,8 @@ export AITERM_TIMEOUT="5m"   # optional: give slow local models more time
 
 ## Usage
 
+The full command reference is in the [`aiterm(1)` manual page](docs/aiterm.1).
+
 Pass your request as arguments. Quotes are optional for plain words, but your shell
 expands the arguments before `aiterm` sees them, so quote the request if it contains
 characters such as `*`, `?`, `&`, `|`, `;`, `<`, `>`, `#`, `$` or an apostrophe.
@@ -186,7 +188,6 @@ CodeQL, govulncheck and a GoReleaser snapshot build. Releases are built by
 
 ## Roadmap
 
-- Shell completions for bash, zsh and fish ([#3](https://github.com/Thakay/aiterm/issues/3))
 - An explain option that describes what a command does before you run it ([#5](https://github.com/Thakay/aiterm/issues/5))
 - Anthropic and Gemini models ([#6](https://github.com/Thakay/aiterm/issues/6))
 - Windows support with PowerShell commands ([#7](https://github.com/Thakay/aiterm/issues/7))
