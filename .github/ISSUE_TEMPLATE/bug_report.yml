@@ -1,0 +1,112 @@
+name: Bug report
+description: Report something in aiterm that does not work as documented.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+
+        **Never paste your API key** (or any other secret) in this form. Issues are public.
+
+        Found a security problem? Please report it privately at
+        https://github.com/Thakay/aiterm/security/advisories/new instead of opening an issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: aiterm version
+      description: The output of `aiterm -version`.
+      placeholder: aiterm 0.2.0 (commit 1a2b3c4, 2026-10-04T12:00:00Z)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      description: For example the output of `uname -srm`, plus the distribution and version on Linux.
+      placeholder: macOS 15.1 arm64, or Ubuntu 24.04 x86_64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      description: How did you install aiterm?
+      options:
+        - Release binary from GitHub Releases
+        - go install
+        - Built from source
+        - Other (please describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: endpoint
+    attributes:
+      label: Endpoint type
+      description: Which API does aiterm talk to? Do not include your API key.
+      options:
+        - OpenAI (default endpoint)
+        - Ollama
+        - Other OpenAI compatible endpoint (please describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The value of `-model` or `AITERM_MODEL`. Leave empty if you use the default.
+      placeholder: gpt-4.1-mini
+
+  - type: textarea
+    id: request
+    attributes:
+      label: Request you typed
+      description: The full `aiterm` command line, and any follow-up requests you sent from the menu.
+      placeholder: aiterm "show the 10 largest files in this folder"
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the suggested command, the menu option you chose and any error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and terminal output
+      description: Paste the relevant terminal output. Remove API keys, tokens and private hostnames first.
+      render: text
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that helps, such as your shell, a custom `-url` setup or a screenshot.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have not included any API keys, tokens or other secrets in this issue.
+          required: true
+        - label: I searched the [existing issues](https://github.com/Thakay/aiterm/issues) and this has not been reported yet.
