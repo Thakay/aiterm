@@ -8,10 +8,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime"
+	"time"
 )
 
 const (
 	defaultEndPoint = "https://api.openai.com/v1/chat/completions"
+	defaultModel    = "gpt-4.1-mini"
+	defaultTimeout  = 60 * time.Second
 )
 
 type ErrorResponse struct {
@@ -53,13 +57,13 @@ type Usage struct {
 }
 
 type OpenAIProvider struct {
-	options OpenAIOptions
+	options    OpenAIOptions
+	httpClient *http.Client
 }
 
 type OpenAIOptions struct {
 	*ProviderOptions
 	model            string
-	temp             string
 	messages         []map[string]string
 	temperature      float64
 	maxTokens        int
@@ -69,11 +73,33 @@ type OpenAIOptions struct {
 	withContext      bool
 }
 
+// osName returns a human friendly name for the operating system aiterm runs on,
+// so the model can tailor commands (e.g. BSD vs GNU flags on macOS).
+func osName(goos string) string {
+	switch goos {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "freebsd":
+		return "FreeBSD"
+	default:
+		return goos
+	}
+}
+
+func systemPrompt(goos string) string {
+	return "You are a command line interpreter that converts the user's natural language request " +
+		"into the closest and most accurate Unix shell command for " + osName(goos) + ". " +
+		"Output only the command, with no instructions, explanations, markdown or code fences. " +
+		"If the request does not resemble a command, reply exactly: not a command"
+}
+
 func defaultMessages() []map[string]string {
 	return []map[string]string{
 		{
 			"role":    "system",
-			"content": "you are a linux command interpreter that convert the users natural language request to the closest and most accurate unix (linux) commands list only nothing extra. if the requested command does not resemble to a command simply say not a command. ouput only the command everytime no instructions nor explanations.",
+			"content": systemPrompt(runtime.GOOS),
 		},
 	}
 }
@@ -86,7 +112,7 @@ func NewOpenAIProvider(apiKey string, options *OpenAIOptions) APIProvider {
 				APIKey: apiKey,
 			},
 			messages:         defaultMessages(),
-			model:            "gpt-3.5-turbo",
+			model:            defaultModel,
 			temperature:      1.0,
 			maxTokens:        256,
 			topP:             1.0,
@@ -99,27 +125,30 @@ func NewOpenAIProvider(apiKey string, options *OpenAIOptions) APIProvider {
 			APIKey: apiKey,
 		}
 	} else {
-		options.ProviderOptions.APIKey = apiKey
-		if options.ProviderOptions.URL == "" {
-			options.ProviderOptions.URL = defaultEndPoint
+		options.APIKey = apiKey
+		if options.URL == "" {
+			options.URL = defaultEndPoint
 		}
+	}
+	if options.model == "" {
+		options.model = defaultModel
 	}
 	if options.messages == nil {
 		options.messages = defaultMessages()
 	}
-	return &OpenAIProvider{*options}
+	return &OpenAIProvider{
+		options:    *options,
+		httpClient: &http.Client{Timeout: defaultTimeout},
+	}
 }
 
-func (o *OpenAIProvider) addMessage(role string, message string) {
-	o.options.messages = append(o.options.messages, map[string]string{"role": role, "content": message})
-}
 func (o *OpenAIProvider) clearMessages() {
 	o.options.messages = defaultMessages()
 }
-func (o *OpenAIProvider) constructPayload() map[string]interface{} {
+func (o *OpenAIProvider) constructPayload(messages []map[string]string) map[string]interface{} {
 	return map[string]interface{}{
 		"model":             o.options.model,
-		"messages":          o.options.messages,
+		"messages":          messages,
 		"temperature":       o.options.temperature,
 		"max_tokens":        o.options.maxTokens,
 		"top_p":             o.options.topP,
@@ -132,8 +161,6 @@ func (o *OpenAIProvider) newFetchConfig(withCtxt bool) FetchConfig {
 	return func(o interface{}) {
 		if provider, ok := o.(*OpenAIProvider); ok {
 			provider.options.withContext = withCtxt
-		} else {
-			log.Fatal("incorrect fetch config provided!")
 		}
 	}
 }
@@ -142,25 +169,30 @@ func (o *OpenAIProvider) setAPIKey(apikey string) {
 	o.options.APIKey = apikey
 }
 func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string, error) {
-	// Construct the request payload
 	for _, opt := range opts {
 		opt(o)
 	}
 	if !o.options.withContext {
 		o.clearMessages()
 	}
-	o.addMessage("user", userRequest)
-	payload := o.constructPayload()
 
-	payloadBytes, err := json.Marshal(payload)
+	// Only commit the exchange to the conversation history once it succeeded,
+	// so a failed request does not leave a dangling user message behind.
+	userMessage := map[string]string{"role": "user", "content": userRequest}
+	messages := make([]map[string]string, 0, len(o.options.messages)+1)
+	messages = append(messages, o.options.messages...)
+	messages = append(messages, userMessage)
+
+	// Construct the request payload
+	payloadBytes, err := json.Marshal(o.constructPayload(messages))
 	if err != nil {
-		return "", &MarshalingError{err} //fmt.Errorf("failed marshaling payload: %w", err)
+		return "", &MarshalingError{err}
 	}
 
 	// Make the HTTP POST request
-	req, err := http.NewRequest("POST", o.options.URL, bytes.NewReader(payloadBytes))
+	req, err := http.NewRequest(http.MethodPost, o.options.URL, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return "", &RequestCreationError{err} //fmt.Errorf("failed creating request: %w", err)
+		return "", &RequestCreationError{err}
 	}
 
 	// Set the necessary headers
@@ -168,71 +200,80 @@ func (o *OpenAIProvider) fetch(userRequest string, opts ...FetchConfig) (string,
 	req.Header.Set("Authorization", "Bearer "+o.options.APIKey)
 
 	// Execute the request
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
-		return "", &ExecutionError{err} //fmt.Errorf("failed executing request: %w", err)
+		return "", &ExecutionError{err}
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Fatal("Could not close the Body with the error: ", err)
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("could not close the response body: %v", err)
 		}
-	}(resp.Body)
+	}()
 
-	// Read and print the response body
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", &ResponseReadError{err} //fmt.Errorf("failed reading response body: %w", err)
+		return "", &ResponseReadError{err}
 	}
 
-	if resp.StatusCode >= http.StatusOK && resp.StatusCode <= http.StatusMultipleChoices {
-
-		var response SuccessResponse
-		err = json.Unmarshal(responseBody, &response)
-		if err != nil {
-			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the success response: %w", err)
-		}
-		//fmt.Println("-----resp------")
-		//fmt.Println(response)
-		if len(response.Choices) > 0 {
-			res := fmt.Sprintf("%s", response.Choices[0].Message.Content)
-			o.addMessage("assistant", res)
-			return res, nil
-		}
-		return "", fmt.Errorf("success response does not contain choices")
-	} else {
-
-		var errorResponse ErrorResponse
-		err = json.Unmarshal(responseBody, &errorResponse)
-		if err != nil {
-			return "", &UnMarshalingError{err} //fmt.Errorf("failed unmarshelling the error response: %w", err)
-		}
-		return "", &OAIAPIError{
-			Type:    errorResponse.Error.Type,
-			Message: errorResponse.Error.Message,
-			Code:    errorResponse.Error.Code,
-		}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", parseErrorResponse(resp.StatusCode, responseBody)
 	}
+
+	var response SuccessResponse
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		return "", &UnMarshalingError{err}
+	}
+	if len(response.Choices) == 0 {
+		return "", errors.New("success response does not contain choices")
+	}
+
+	res := response.Choices[0].Message.Content
+	messages = append(messages, map[string]string{"role": "assistant", "content": res})
+	o.options.messages = messages
+	return res, nil
+}
+
+// parseErrorResponse turns a non-2xx response into an *OAIAPIError. Bodies that
+// are not OpenAI shaped JSON (e.g. an HTML page from a proxy) still produce a
+// useful error that carries the HTTP status.
+func parseErrorResponse(statusCode int, body []byte) error {
+	apiErr := &OAIAPIError{StatusCode: statusCode}
+
+	var errorResponse ErrorResponse
+	if err := json.Unmarshal(body, &errorResponse); err == nil && errorResponse.Error.Message != "" {
+		apiErr.Type = errorResponse.Error.Type
+		apiErr.Message = errorResponse.Error.Message
+		apiErr.Code = errorResponse.Error.Code
+		return apiErr
+	}
+
+	apiErr.Type = "http_error"
+	apiErr.Message = http.StatusText(statusCode)
+	if snippet := truncate(string(bytes.TrimSpace(body)), 200); snippet != "" {
+		apiErr.Message = fmt.Sprintf("%s: %s", apiErr.Message, snippet)
+	}
+	return apiErr
+}
+
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
 }
 
 func (o *OpenAIProvider) hasAPIKey() bool {
-	if o.options.APIKey != "" {
-		return true
-	}
-	return true
+	return o.options.APIKey != ""
 }
 
 func (o *OpenAIProvider) handleAPIError(err error) error {
 	var apiErr *OAIAPIError
 	if errors.As(err, &apiErr) {
-		switch apiErr.Code {
-		case "invalid_api_key":
+		if apiErr.Code == "invalid_api_key" || apiErr.StatusCode == http.StatusUnauthorized {
 			return &APIKeyError{OriginalError: apiErr}
-		default:
-			log.Printf("API error: %v\n", apiErr)
-			return apiErr
 		}
+		return apiErr
 	}
 	return err
-
 }
