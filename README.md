@@ -1,69 +1,159 @@
 # aiterm
 
-![MIT License](https://img.shields.io/badge/license-MIT-green.svg)
+[![CI](https://github.com/Thakay/aiterm/actions/workflows/ci.yml/badge.svg)](https://github.com/Thakay/aiterm/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Thakay/aiterm?sort=semver)](https://github.com/Thakay/aiterm/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Thakay/aiterm)](https://goreportcard.com/report/github.com/Thakay/aiterm)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Thakay/aiterm)](go.mod)
+[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Introduction
-`aiterm` is a command-line application that translate natural 
-language to Unix commands, leveraging AI APIs. Designed for developers, system administrators, 
-and anyone accustomed to the terminal but seeking a more intuitive way 
-to interact with their systems, with `aiterm` instead of googling the commands you can have them 
-readily in your terminal. Developed in Go, `aiterm` is currently 
-in beta, offering a glimpse into a future where commands are more accessible 
-and user-friendly.
+`aiterm` translates natural language into shell commands, right in your terminal.
+Describe what you want, review the command it suggests, then run it, copy it, edit it,
+or refine it with a follow-up request. No more searching for that `find` or `tar`
+incantation.
+
+It is written in Go, ships as a single binary, and works with OpenAI or any
+OpenAI compatible API, including local models served by Ollama or LM Studio.
+
+<p align="center">
+  <img src="usage1.gif" alt="aiterm turning a natural language request into a shell command" />
+</p>
 
 ## Features
 
-- **Natural Language Processing**: Translate natural language commands into Unix commands using advanced AI APIs.
-- **Flexible Configuration**: Use an environment variable or a flag to set the OpenAI API key. (Upcoming) select which OpenAI model to use with different configs.
-- **Interactive Options**: After translating a command, choose to run it directly, copy it to the clipboard, or edit it further for customization.
-- **Contextual Awareness**: (Upcoming) Send subsequent requests without context or with the current context for refined command suggestions.
+- **Natural language to commands**: describe the task, get a single command tailored
+  to your OS (macOS BSD tools or Linux GNU tools).
+- **You stay in control**: nothing runs until you press `y`. You can also copy the
+  command, edit it before running, or exit.
+- **Follow-up requests**: refine the last answer with context ("now include hidden
+  files") or start fresh without it.
+- **Bring your own model**: pick any model with `-model`, and point `-url` at any
+  OpenAI compatible endpoint (Ollama, LM Studio, OpenRouter, ...).
+- **Single static binary** for Linux and macOS on amd64 and arm64.
 
 ## Installation
 
-Since `aiterm` is in beta, it can be installed by cloning the repository and building the project with Go. Here are the steps:
+### Prebuilt binaries
+
+Download the archive for your platform from the
+[latest release](https://github.com/Thakay/aiterm/releases/latest), extract it and put
+`aiterm` on your `PATH`. For example:
 
 ```bash
-git clone https://github.com/yourgithubusername/aiterm.git
-cd aiterm
-go build -o aiterm
+# macOS on Apple silicon (use Darwin_x86_64 for Intel Macs)
+curl -sSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Darwin_arm64.tar.gz | tar -xz aiterm
+sudo mv aiterm /usr/local/bin/
+
+# Linux on x86_64 (use Linux_arm64 for ARM)
+curl -sSL https://github.com/Thakay/aiterm/releases/latest/download/aiterm_Linux_x86_64.tar.gz | tar -xz aiterm
+sudo mv aiterm /usr/local/bin/
 ```
+
+Each release includes a `checksums.txt` file to verify the download.
+
+### With Go
+
+Requires Go 1.22 or newer.
+
+```bash
+go install github.com/Thakay/aiterm@latest
+```
+
+### From source
+
+```bash
+git clone https://github.com/Thakay/aiterm.git
+cd aiterm
+go build -o aiterm .
+```
+
 ## Configuration
 
-To use `aiterm`, you need to set the OpenAI API key. This can be done in two ways:
+`aiterm` needs an API key. Flags take precedence over environment variables.
 
-1. Set an environment variable `OPENAI_KEY` with your OpenAI API key.
-2. Use the `-key` flag when running `aiterm` to provide the API key.
+| Flag       | Environment variable | Default                                      | Description                                          |
+|------------|----------------------|----------------------------------------------|------------------------------------------------------|
+| `-key`     | `OPENAI_KEY`         |                                              | API key sent as a bearer token                       |
+| `-model`   | `AITERM_MODEL`       | `gpt-4.1-mini`                               | Model used to generate commands                      |
+| `-url`     | `AITERM_URL`         | `https://api.openai.com/v1/chat/completions` | Chat completions endpoint of an OpenAI compatible API |
+| `-version` |                      |                                              | Print the version and exit                           |
 
-If the API key is not set, `aiterm` will prompt you to enter it manually or offer to set it up for future use.
+Prefer the environment variable over `-key` so the key does not end up in your shell
+history. If no key is set, `aiterm` asks for one and uses it for the current session.
+
+```bash
+export OPENAI_KEY="sk-..."
+```
+
+### Local models with Ollama
+
+```bash
+export AITERM_URL="http://localhost:11434/v1/chat/completions"
+export AITERM_MODEL="llama3.2"
+export OPENAI_KEY="ollama"   # Ollama ignores the key, but aiterm expects one to be set
+```
 
 ## Usage
 
-To start `aiterm`, simply run the built executable. Here's a basic example:
+Pass your request as arguments. Quotes are optional.
 
 ```bash
-./aiterm "find all the files that has the word foo in them in the previous directory"
+aiterm "find all the files that contain the word foo in the parent directory"
+aiterm show the 10 largest files in this folder
 ```
-<p align="center">
-  <img alig src="https://github.com/Thakay/aiterm/blob/main/usage1.gif" />
-</p>
+
+`aiterm` shows the suggested command and a menu:
+
+| Key | Action                                                              |
+|-----|---------------------------------------------------------------------|
+| `y` | Run the command (its output streams straight to your terminal)      |
+| `c` | Copy the command to the clipboard and exit                          |
+| `g` | Copy the command, then paste an edited version to run with `aiterm` |
+| `r` | Send a follow-up request that keeps the conversation context        |
+| `w` | Send a new request without the previous context                     |
+| `q` | Quit                                                                |
+
+If a command fails, `aiterm` prints the exit status and brings the menu back so you
+can edit it or ask for another one.
+
+On Linux, copying to the clipboard needs `xclip`, `xsel` or `wl-clipboard`. Without
+one of them, `aiterm` prints the command so you can copy it yourself.
+
+> [!WARNING]
+> Commands come from a language model and can be wrong or destructive. Always read a
+> command before you run it.
+
+## Development
+
+```bash
+go test -race ./...      # run the tests
+go vet ./...             # static checks
+golangci-lint run        # lint (https://golangci-lint.run)
+```
+
+Every pull request runs the same checks in CI on Linux and macOS. Releases are built
+by [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Roadmap
+
+- Shell completions and a man page
+- A `-explain` mode that describes what a command does before you run it
+- Native support for more providers (Anthropic, Gemini)
+- Windows support (PowerShell commands)
+- A Homebrew tap
+
+Ideas and feedback are welcome in the [issue tracker](https://github.com/Thakay/aiterm/issues).
 
 ## Contributing
 
-Contributions are welcome! If you're interested in improving `aiterm`, please follow these steps:
-
-1. Fork the repository.
-2. Create a new branch for your feature (`git checkout -b feature-branch`).
-3. Make your changes.
-4. Commit your changes (`git commit -am 'Add some feature'`).
-5. Push to the branch (`git push origin feature-branch`).
-6. Submit a Pull Request.
-
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and our
+[Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull request. Report security
+issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
-`aiterm` is licensed under the MIT License. This permits personal and commercial use, modification, distribution, and private use of the software under the condition that the license and copyright notice are included in all copies or substantial portions of the software. For the full license text, see the LICENSE file in the project root.
+`aiterm` is licensed under the [MIT License](LICENSE).
 
-## Contact Information
+## Contact
 
-For questions, support, or contributions, please contact [My email](mailto:your.email@example.com).
-
+For questions and support, [open an issue](https://github.com/Thakay/aiterm/issues/new/choose).
