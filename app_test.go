@@ -383,7 +383,7 @@ func TestRunAPIErrors(t *testing.T) {
 		if !errors.As(err, &keyErr) {
 			t.Fatalf("Run() = %v, want *APIKeyError", err)
 		}
-		if len(p.handled) != 1 || p.handled[0] != apiErr {
+		if len(p.handled) != 1 || !errors.Is(p.handled[0], apiErr) {
 			t.Errorf("provider should map the API error, handled = %v", p.handled)
 		}
 		if !strings.Contains(errOut.String(), "API key was rejected") {

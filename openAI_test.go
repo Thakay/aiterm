@@ -235,17 +235,17 @@ func TestHandleAPIError(t *testing.T) {
 	}
 
 	rateLimited := &OAIAPIError{StatusCode: http.StatusTooManyRequests, Code: "rate_limit_exceeded"}
-	if err := p.handleAPIError(rateLimited); err != rateLimited {
-		t.Errorf("handleAPIError(rate limit) = %v, want it unchanged", err)
-	}
-
 	other := errors.New("boom")
-	if err := p.handleAPIError(other); err != other {
-		t.Errorf("handleAPIError(other) = %v, want it unchanged", err)
+	for _, in := range []error{rateLimited, other} {
+		err := p.handleAPIError(in)
+		var keyErr *APIKeyError
+		if !errors.Is(err, in) || errors.As(err, &keyErr) {
+			t.Errorf("handleAPIError(%v) = %v, want it unchanged", in, err)
+		}
 	}
 }
 
-func TestNewFetchConfigIgnoresOtherProviders(t *testing.T) {
+func TestNewFetchConfigIgnoresOtherProviders(_ *testing.T) {
 	p := NewOpenAIProvider("sk", nil)
 	// Must not panic or exit when applied to an unrelated value.
 	p.newFetchConfig(false)(&fakeProvider{})
