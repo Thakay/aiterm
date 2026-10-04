@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `aiterm(1)` manual page, included in release archives.
+
+
 ## [0.2.0] - 2026-10-04
 
 ### Added

@@ -1,0 +1,123 @@
+.TH AITERM 1 "2026-10-04" "aiterm 0.2.0" "User Commands"
+.SH NAME
+aiterm \- turn a natural-language request into a shell command
+.SH SYNOPSIS
+.B aiterm
+.RI [ flags ]
+.RI "natural language request"
+.br
+.B aiterm
+.B -version
+.SH DESCRIPTION
+.B aiterm
+sends a request to an OpenAI-compatible chat-completions endpoint and displays the
+suggested shell command. It does not run the command until you review it and enter
+.BR y .
+Model-generated commands can be wrong or destructive. Always inspect a command before
+running it. Commands containing control or invisible characters are refused, and
+multi-line commands are marked because every line runs when confirmed.
+.PP
+After a command is shown, the menu accepts these keys:
+.TP
+.B y
+Run the displayed command.
+.TP
+.B c
+Copy the command to the clipboard and exit. If no clipboard utility is available,
+the command is printed instead.
+.TP
+.B g
+Copy the command so you can edit it and run the edited version with
+.BR aiterm .
+.TP
+.B r
+Send a follow-up request with the current conversation context.
+.TP
+.B w
+Send a new request without the previous conversation context.
+.TP
+.B q
+Quit without running the command.
+.PP
+If a command fails, or you interrupt it with Ctrl-C, its exit status is printed and
+the menu returns. On Linux, clipboard copying uses the first available command from
+.BR xclip ,
+.BR xsel ,
+or
+.BR wl-copy .
+.SH OPTIONS
+Options must appear before the request.
+.TP
+.BI -key " key"
+API key. Defaults to
+.BR OPENAI_KEY .
+If neither is set, or the key is rejected, the program prompts for a key without
+echoing it. Prefer the environment variable so the key is not stored in shell history
+or exposed in the process list.
+.TP
+.BI -model " model"
+Model to use. Defaults to
+.B AITERM_MODEL
+or
+.BR gpt-4.1-mini .
+.TP
+.BI -timeout " duration"
+Maximum time to wait for the API, for example
+.B 30s
+or
+.BR 5m .
+Defaults to
+.B AITERM_TIMEOUT
+or
+.BR 2m .
+.TP
+.BI -url " url"
+Chat-completions endpoint for an OpenAI-compatible API. Defaults to
+.B AITERM_URL
+or
+.BR https://api.openai.com/v1/chat/completions .
+.TP
+.B -version
+Print version information and exit.
+.TP
+.B -h
+Print usage information and exit.
+.SH ENVIRONMENT
+.TP
+.B OPENAI_KEY
+API key sent as a bearer token. It can be omitted when the program prompts for a key.
+.TP
+.B AITERM_MODEL
+Default model; overridden by
+.BR -model .
+.TP
+.B AITERM_TIMEOUT
+Default API timeout; overridden by
+.BR -timeout .
+.TP
+.B AITERM_URL
+Default chat-completions endpoint; overridden by
+.BR -url .
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including displaying the version or quitting from the menu.
+.TP
+.B 1
+Runtime error.
+.TP
+.B 2
+Usage error, such as a missing request.
+.SH EXAMPLES
+.nf
+aiterm "find all Go files in this directory"
+aiterm list the 10 largest files in this folder
+AITERM_URL=http://localhost:11434/v1/chat/completions \\
+  AITERM_MODEL=llama3.2 OPENAI_KEY=ollama aiterm "show disk usage"
+.fi
+.SH SEE ALSO
+.BR sh (1)
+.PP
+Project documentation: \%https://github.com/Thakay/aiterm
+.SH AUTHORS
+The aiterm contributors.

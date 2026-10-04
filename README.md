@@ -99,6 +99,8 @@ export AITERM_TIMEOUT="5m"   # optional: give slow local models more time
 
 ## Usage
 
+The full command reference is available in the [`aiterm(1)` manual page](docs/aiterm.1).
+
 Pass your request as arguments. Quotes are optional for plain words, but your shell
 expands the arguments before `aiterm` sees them, so quote the request if it contains
 characters such as `*`, `?`, `&`, `|`, `;`, `<`, `>`, `#`, `$` or an apostrophe.
