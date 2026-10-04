@@ -1,0 +1,15 @@
+# Binaries
+/aiterm
+*.exe
+*.test
+
+# Build and release output
+/dist/
+*.out
+coverage.*
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store

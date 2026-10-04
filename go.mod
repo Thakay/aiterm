@@ -1,5 +1,5 @@
-module github.com/thakay/goterm
+module github.com/Thakay/aiterm
 
-go 1.20
+go 1.22
 
-require github.com/atotto/clipboard v0.1.4 // indirect
+require github.com/atotto/clipboard v0.1.4
