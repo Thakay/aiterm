@@ -1,0 +1,77 @@
+# GoReleaser configuration. Reference: https://goreleaser.com/customization/
+# Check it locally with `goreleaser check` and try a full build with
+# `goreleaser release --snapshot --clean` (or `make snapshot`).
+version: 2
+
+project_name: aiterm
+
+builds:
+  - id: aiterm
+    main: .
+    binary: aiterm
+    env:
+      - CGO_ENABLED=0
+    # Commands run through `sh -c`, so only Unix-like systems are supported.
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
+    # Reproducible builds: the embedded date and the file timestamps are both
+    # the commit time, so building the same tag twice gives identical binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    # Produces aiterm_Linux_x86_64.tar.gz, aiterm_Darwin_arm64.tar.gz, ...
+    # The README install commands download these names from
+    # releases/latest/download, so keep the version out of them.
+    name_template: '{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
+    # The binary sits at the archive root (no wrapping directory), so
+    # `tar -xz aiterm` extracts it directly.
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Used only when the release workflow cannot find a CHANGELOG.md section for
+# the tag. Otherwise that section is passed with --release-notes.
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]-]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]-]+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^docs(\(.+\))?!?:'
+      - '^test(\(.+\))?!?:'
+      - '^chore(\(.+\))?!?:'
+      - '^ci(\(.+\))?!?:'
+      - '^Merge (pull request|branch|remote-tracking branch) '
+
+release:
+  github:
+    owner: Thakay
+    name: aiterm
+  # Tags such as v1.0.0-rc.1 are published as pre-releases.
+  prerelease: auto
+  footer: |
+    **Full Changelog**: https://github.com/Thakay/aiterm/compare/{{ .PreviousTag }}...{{ .Tag }}
