@@ -73,6 +73,37 @@ cd aiterm
 go build -o aiterm .
 ```
 
+## Shell completions
+
+Completion scripts for bash, zsh and fish live in `completions/` and are
+included in the release archives. They complete the flag names; `-timeout`
+also suggests a few durations. Everything after the flags is the request,
+so there is nothing to complete there.
+
+For bash, copy the script into your completion directory and start a new
+shell:
+
+```bash
+sudo cp completions/aiterm.bash /etc/bash_completion.d/aiterm
+```
+
+On macOS with Homebrew the directory is `/usr/local/etc/bash_completion.d/`
+(or `/opt/homebrew/etc/bash_completion.d/` on Apple silicon).
+
+For zsh, copy the script as `_aiterm` into a directory on your `fpath`:
+
+```bash
+mkdir -p ~/.zsh/completions
+cp completions/_aiterm ~/.zsh/completions/
+autoload -Uz compinit && compinit
+```
+
+For fish, copy the script into your completions directory:
+
+```bash
+cp completions/aiterm.fish ~/.config/fish/completions/
+```
+
 ## Configuration
 
 `aiterm` needs an API key. Flags go before the request and take precedence over
@@ -102,6 +133,8 @@ export AITERM_TIMEOUT="5m"   # optional: give slow local models more time
 ```
 
 ## Usage
+
+The full command reference is in the [`aiterm(1)` manual page](docs/aiterm.1).
 
 Pass your request as arguments. Quotes are optional for plain words, but your shell
 expands the arguments before `aiterm` sees them, so quote the request if it contains
@@ -155,7 +188,6 @@ CodeQL, govulncheck and a GoReleaser snapshot build. Releases are built by
 
 ## Roadmap
 
-- Shell completions for bash, zsh and fish ([#3](https://github.com/Thakay/aiterm/issues/3))
 - An explain option that describes what a command does before you run it ([#5](https://github.com/Thakay/aiterm/issues/5))
 - Anthropic and Gemini models ([#6](https://github.com/Thakay/aiterm/issues/6))
 - Windows support with PowerShell commands ([#7](https://github.com/Thakay/aiterm/issues/7))

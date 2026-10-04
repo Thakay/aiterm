@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Ship a man page for aiterm in release archives.
+- Shell completions for bash, zsh and fish in `completions/`, shipped in
+  the release archives. See the README's Shell completions section for
+  how to enable them.
 
 ## [0.2.0] - 2026-10-04
 
