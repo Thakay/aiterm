@@ -53,6 +53,10 @@ To verify a download, fetch the archive and `checksums.txt` from the release, th
 `sha256sum --ignore-missing -c checksums.txt` (on macOS:
 `shasum -a 256 --ignore-missing -c checksums.txt`).
 
+The release archives include the `aiterm(1)` manual at
+`docs/aiterm.1`. Install it in your system's `man1` directory to read it
+with `man aiterm`.
+
 ### With Go
 
 Requires Go 1.26 or newer. Go 1.21 and later download the right toolchain automatically.
@@ -152,7 +156,6 @@ CodeQL, govulncheck and a GoReleaser snapshot build. Releases are built by
 ## Roadmap
 
 - Shell completions for bash, zsh and fish ([#3](https://github.com/Thakay/aiterm/issues/3))
-- A man page ([#4](https://github.com/Thakay/aiterm/issues/4))
 - An explain option that describes what a command does before you run it ([#5](https://github.com/Thakay/aiterm/issues/5))
 - Anthropic and Gemini models ([#6](https://github.com/Thakay/aiterm/issues/6))
 - Windows support with PowerShell commands ([#7](https://github.com/Thakay/aiterm/issues/7))
