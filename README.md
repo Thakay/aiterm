@@ -151,13 +151,16 @@ CodeQL, govulncheck and a GoReleaser snapshot build. Releases are built by
 
 ## Roadmap
 
-- Shell completions and a man page
-- A `-explain` mode that describes what a command does before you run it
-- Native support for more providers (Anthropic, Gemini)
-- Windows support (PowerShell commands)
-- A Homebrew tap
+- Shell completions for bash, zsh and fish ([#3](https://github.com/Thakay/aiterm/issues/3))
+- A man page ([#4](https://github.com/Thakay/aiterm/issues/4))
+- An explain option that describes what a command does before you run it ([#5](https://github.com/Thakay/aiterm/issues/5))
+- Anthropic and Gemini models ([#6](https://github.com/Thakay/aiterm/issues/6))
+- Windows support with PowerShell commands ([#7](https://github.com/Thakay/aiterm/issues/7))
+- A Homebrew tap ([#8](https://github.com/Thakay/aiterm/issues/8))
 
-Ideas and feedback are welcome in the [issue tracker](https://github.com/Thakay/aiterm/issues).
+Issues labeled [good first issue](https://github.com/Thakay/aiterm/labels/good%20first%20issue)
+are a good place to start. Ideas and feedback are welcome in the
+[issue tracker](https://github.com/Thakay/aiterm/issues).
 
 ## Contributing
 
