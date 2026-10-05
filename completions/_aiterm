@@ -12,6 +12,7 @@ _arguments -S -A '-*' \
   '-url=[chat completions endpoint of an OpenAI compatible API]:URL:' \
   '-model=[model to use]:model:' \
   '-timeout=[how long to wait for the API]:duration:(30s 2m 5m)' \
+  '-print[print the suggested command and exit]' \
   '-version[print version information and exit]' \
   '-h[show help information]' \
   '-help[show help information]' \

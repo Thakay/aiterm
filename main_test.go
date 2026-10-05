@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -282,11 +283,13 @@ func TestMainExitCodes(t *testing.T) {
 		{"list files -key sk-test", 2},
 		// Nothing listens on port 1, so the request fails right away.
 		{"-url http://127.0.0.1:1 -key sk-test list files", 1},
+		{"-print -url http://127.0.0.1:1 -key sk-test list files", 1},
+		{"-print -url http://127.0.0.1:1 list files", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.args, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestMainExitCodes$")
-			cmd.Env = append(os.Environ(), "AITERM_RUN_MAIN=1", "AITERM_ARGS="+tt.args)
+			cmd.Env = append(os.Environ(), "AITERM_RUN_MAIN=1", "AITERM_ARGS="+tt.args, varKeyName+"=")
 			err := cmd.Run()
 			code := 0
 			var exitErr *exec.ExitError
@@ -297,6 +300,64 @@ func TestMainExitCodes(t *testing.T) {
 			}
 			if code != tt.want {
 				t.Errorf("exit code = %d, want %d", code, tt.want)
+			}
+		})
+	}
+}
+
+// failReader fails the test if anything tries to read from stdin.
+type failReader struct{ t *testing.T }
+
+func (r failReader) Read([]byte) (int, error) {
+	r.t.Error("stdin was read in print mode")
+	return 0, io.EOF
+}
+
+func TestRunPrint(t *testing.T) {
+	srv := newChatServer(t, 200, successJSON("```bash\nfind . -type f -size +100M\n```"))
+	var out, errOut bytes.Buffer
+	args := []string{"-url", srv.URL, "-key", "sk-test", "-print", "find files larger than 100 MB"}
+	if err := run(args, envFrom(nil), failReader{t}, &out, &errOut); err != nil {
+		t.Fatalf("run() = %v (stderr %q)", err, errOut.String())
+	}
+	if got, want := out.String(), "find . -type f -size +100M\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q, want nothing", errOut.String())
+	}
+}
+
+func TestRunPrintErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		key     string
+		wantErr string
+	}{
+		{"missing key", 200, successJSON("ls"), "", "no API key"},
+		{"rejected key", 401, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}`, "sk-bad", "invalid API key"},
+		{"not a command", 200, successJSON("Not a command."), "sk-test", "does not look like a command"},
+		{"hidden characters", 200, successJSON("ls\u202e -la"), "sk-test", "control or invisible characters"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newChatServer(t, tt.status, tt.body)
+			var out, errOut bytes.Buffer
+			args := []string{"-url", srv.URL, "-print", "list"}
+			if tt.key != "" {
+				args = append([]string{"-key", tt.key}, args...)
+			}
+			err := run(args, envFrom(nil), failReader{t}, &out, &errOut)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("run() = %v, want error containing %q", err, tt.wantErr)
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want nothing", out.String())
+			}
+			if tt.key == "" && len(srv.bodies) != 0 {
+				t.Error("a request was sent without a key")
 			}
 		})
 	}

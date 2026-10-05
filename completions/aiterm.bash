@@ -48,7 +48,7 @@ _aiterm()
     done
 
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=( $(compgen -W "-key -url -model -timeout -version -h -help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "-key -url -model -timeout -print -version -h -help" -- "$cur") )
     fi
     return 0
 }

@@ -25,6 +25,9 @@ type App struct {
 	copyToClipboard func(string) error
 	userRequest     string
 	fetchCfg        FetchConfig
+	// printOnly makes Run write the suggested command to out and return,
+	// without the menu and without ever reading from in.
+	printOnly bool
 }
 
 func NewApp(provider APIProvider, userReq string) *App {
@@ -45,6 +48,9 @@ func newApp(provider APIProvider, userReq string, in io.Reader, out, errOut io.W
 }
 
 func (a *App) Run() error {
+	if a.printOnly {
+		return a.runPrint()
+	}
 
 	if ok, err := a.HandleEmptyAPIKey(); err != nil {
 		return err
@@ -95,6 +101,28 @@ func (a *App) Run() error {
 			return nil
 		}
 	}
+}
+
+// runPrint fetches one suggestion and writes it to out followed by a newline.
+// It never prompts, so every case that would ask for input is an error, and all
+// messages go to errOut so out holds only the command.
+func (a *App) runPrint() error {
+	if !a.Client.hasAPIKey() {
+		return errors.New("no API key was provided: set the " + varKeyName + " environment variable or pass -key")
+	}
+	cmdstr, err := a.Client.fetch(a.userRequest, a.fetchCfg)
+	if err != nil {
+		return a.HandleAPIError(err)
+	}
+	ok, validCmdstr := a.ValidateCmd(cmdstr)
+	if !ok {
+		if cleaned := cleanCmd(cmdstr); hasHiddenRunes(cleaned) {
+			return fmt.Errorf("the reply contains control or invisible characters, so it will not be printed: %q", cleaned)
+		}
+		return errors.New("the reply does not look like a command, try a different prompt")
+	}
+	_, err = fmt.Fprintln(a.out, validCmdstr)
+	return err
 }
 
 func (a *App) HandleCmd(cmd string) (bool, error) {
