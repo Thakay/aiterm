@@ -15,10 +15,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -54,9 +56,53 @@ func main() {
 		if errors.Is(err, errUsage) {
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stderr, "aiterm: %v\n", err)
+		reportRuntimeError(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func reportRuntimeError(w io.Writer, err error) {
+	fmt.Fprintf(w, "aiterm: %v\n", err)
+	if hint := runtimeErrorHint(err); hint != "" {
+		fmt.Fprintf(w, "hint: %s\n", hint)
+	}
+}
+
+func runtimeErrorHint(err error) string {
+	var apiErr *OAIAPIError
+	if errors.As(err, &apiErr) {
+		if apiErr.StatusCode == http.StatusUnauthorized || apiErr.Code == "invalid_api_key" {
+			return ""
+		}
+		switch {
+		case apiErr.StatusCode == http.StatusNotFound || apiErr.Code == "model_not_found":
+			return "The model is wrong or not available on this endpoint; check -model or AITERM_MODEL."
+		case apiErr.StatusCode == http.StatusTooManyRequests && apiErr.Code == "insufficient_quota":
+			return "The account has no credit left; check billing."
+		case apiErr.StatusCode == http.StatusTooManyRequests:
+			return "Rate limited; wait a moment and retry."
+		case apiErr.StatusCode >= 500 && apiErr.StatusCode <= 599:
+			return "The service had a problem; retry later."
+		}
+	}
+
+	var requestErr *url.Error
+	if errors.As(err, &requestErr) && errors.Is(err, syscall.ECONNREFUSED) {
+		endpoint, parseErr := url.Parse(requestErr.URL)
+		if parseErr == nil && isLoopbackHost(endpoint.Hostname()) {
+			return "The local server (Ollama or LM Studio) is not running."
+		}
+	}
+
+	return ""
 }
 
 func run(args []string, getenv func(string) string, in io.Reader, out, errOut io.Writer) error {
@@ -179,11 +225,7 @@ func insecureRemoteURL(raw string) bool {
 	if err != nil || !strings.EqualFold(u.Scheme, "http") {
 		return false
 	}
-	host := u.Hostname()
-	if strings.EqualFold(host, "localhost") {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if isLoopbackHost(u.Hostname()) {
 		return false
 	}
 	return true
