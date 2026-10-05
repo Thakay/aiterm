@@ -47,6 +47,7 @@ type config struct {
 	timeout     time.Duration
 	prompt      string
 	showVersion bool
+	printOnly   bool
 }
 
 func main() {
@@ -92,7 +93,9 @@ func run(args []string, getenv func(string) string, in io.Reader, out, errOut io
 		withContext: true,
 	})
 
-	return newApp(openAIClient, cfg.prompt, in, out, errOut).Run()
+	app := newApp(openAIClient, cfg.prompt, in, out, errOut)
+	app.printOnly = cfg.printOnly
+	return app.Run()
 }
 
 // parseArgs reads the flags and the prompt. Flags win over environment
@@ -106,6 +109,7 @@ func parseArgs(args []string, getenv func(string) string, output io.Writer) (*co
 	fs.StringVar(&cfg.url, "url", "", fmt.Sprintf("chat completions endpoint of an OpenAI compatible API (default $%s or %q)", varURLName, defaultEndPoint))
 	fs.StringVar(&cfg.model, "model", "", fmt.Sprintf("model to use (default $%s or %q)", varModelName, defaultModel))
 	fs.DurationVar(&cfg.timeout, "timeout", 0, fmt.Sprintf("how long to wait for the API, e.g. 30s or 5m (default $%s or %v)", varTimeoutName, defaultTimeout))
+	fs.BoolVar(&cfg.printOnly, "print", false, "print the suggested command to stdout and exit, without running it")
 	fs.BoolVar(&cfg.showVersion, "version", false, "print version information and exit")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), `Usage: aiterm [flags] "natural language request"`)

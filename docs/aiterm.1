@@ -5,6 +5,8 @@ aiterm \- turn a natural language request into a shell command
 .nf
 .B aiterm [flags] [--] request
 .br
+.B aiterm -print [flags] [--] request
+.br
 .B aiterm -version
 .br
 .B aiterm -h
@@ -41,6 +43,12 @@ when the URL uses plain HTTP to a non-local host.
 .B -timeout DURATION
 Maximum time to wait for the API request. Defaults to \fBAITERM_TIMEOUT\fR, or
 \fB2m\fR if unset. Use a Go duration such as \fB30s\fR or \fB5m\fR.
+.TP
+.B -print
+Print the suggested command to standard output and exit, without the menu and
+without running it. Standard input is never read, so a missing or rejected key,
+or a reply that is not a usable command, exits with status 1 and a message on
+standard error. Piping the output into a shell skips the confirmation step.
 .TP
 .B -version
 Print version information and exit.

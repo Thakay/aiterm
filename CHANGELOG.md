@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `-print` flag that writes the suggested command to stdout and exits, for
+  scripts and shell keybindings. It never prompts or runs anything.
 - Ship a man page for aiterm in release archives.
 - Shell completions for bash, zsh and fish in `completions/`, shipped in
   the release archives. See the README's Shell completions section for

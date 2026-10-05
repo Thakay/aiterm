@@ -115,6 +115,7 @@ environment variables.
 | `-model`   | `AITERM_MODEL`       | `gpt-4.1-mini`                               | Model used to generate commands                       |
 | `-url`     | `AITERM_URL`         | `https://api.openai.com/v1/chat/completions` | Chat completions endpoint of an OpenAI compatible API |
 | `-timeout` | `AITERM_TIMEOUT`     | `2m`                                         | How long to wait for the API, such as `30s` or `5m`   |
+| `-print`   |                      |                                              | Print the suggested command to stdout and exit        |
 | `-version` |                      |                                              | Print the version and exit                            |
 
 Prefer the environment variable over `-key`, so the key does not end up in your shell
@@ -122,6 +123,23 @@ history or the process list. Set it in your shell profile (`~/.zshrc`, `~/.bashr
 or enter it without echo for the current shell with `read -rs OPENAI_KEY && export OPENAI_KEY`.
 If no key is set, or the key is rejected, `aiterm` asks for one (without echoing it)
 and uses it for the current session.
+
+### Print mode for scripts and keybindings
+
+`-print` skips the menu: it writes the suggested command, and nothing else, to stdout
+and exits. Nothing runs and nothing is read from stdin, so a missing or rejected key, a
+reply that is not a command, or a reply with hidden characters exits with code `1` and
+a message on stderr instead of prompting.
+
+```bash
+aiterm -print "find files larger than 100 MB"
+# find . -type f -size +100M
+```
+
+Piping the output straight into a shell (`aiterm -print ... | sh`) skips the
+confirmation step entirely, so only do that if you trust the reply without reading it.
+Putting it on your command line to edit first is the safer pattern, e.g. in zsh:
+`print -z -- "$(aiterm -print 'list all go files')"`.
 
 ### Local models with Ollama
 
