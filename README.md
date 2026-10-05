@@ -230,6 +230,11 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and ou
 [Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull request. Report security
 issues privately as described in [SECURITY.md](SECURITY.md).
 
+## Related
+
+[SAKO](https://github.com/Thakay/sako), by the same author, is a task ledger and finish
+gate for coding agents such as Claude Code and Codex.
+
 ## License
 
 `aiterm` is licensed under the [MIT License](LICENSE).
