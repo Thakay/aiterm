@@ -132,6 +132,15 @@ export OPENAI_KEY="ollama"   # Ollama ignores the key, but aiterm expects one to
 export AITERM_TIMEOUT="5m"   # optional: give slow local models more time
 ```
 
+### API error hints
+
+For common failures, aiterm keeps the original error and prints a next step:
+check the model for a 404 or model_not_found, check billing for insufficient_quota,
+wait and retry for other 429 responses, and retry later for 5xx responses. A
+connection refusal at a localhost or loopback URL suggests starting the local
+server. Other errors receive no hint, and rejected API keys keep their existing
+handling.
+
 ## Usage
 
 The full command reference is in the [`aiterm(1)` manual page](docs/aiterm.1).
